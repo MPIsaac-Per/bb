@@ -64,6 +64,7 @@ const {
   mockInMemory,
   mockCreateAgentSessionServices,
   mockCreateAgentSession,
+  mockBindExtensions,
   mockSessionState,
   mockSessionEventListeners,
   mockAbort,
@@ -306,6 +307,19 @@ describe("PiSdkSession", () => {
     expect(mockCreateAgentSessionServices).toHaveBeenCalledWith({
       cwd: "/tmp/project",
       resourceLoaderOptions: {},
+    });
+  });
+
+  it("binds lifecycle handlers for extensions", async () => {
+    const session = new PiSdkSession({ cwd: "/tmp/project" }, vi.fn(), vi.fn());
+
+    await session.start();
+
+    expect(mockBindExtensions).toHaveBeenCalledWith({
+      mode: "rpc",
+      abortHandler: expect.any(Function),
+      shutdownHandler: expect.any(Function),
+      onError: expect.any(Function),
     });
   });
 

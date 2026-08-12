@@ -275,7 +275,22 @@ export class PiSdkSession {
     });
     this.session = session;
 
-    await session.bindExtensions({ mode: "rpc" });
+    await session.bindExtensions({
+      mode: "rpc",
+      abortHandler: () => {
+        void session.abort();
+      },
+      shutdownHandler: () => {
+        this.onDone();
+      },
+      onError: (error) => {
+        this.onDone(
+          new Error(
+            `Pi extension error (${error.extensionPath}, ${error.event}): ${error.error}`,
+          ),
+        );
+      },
+    });
 
     this.ensureCustomToolsActive();
 

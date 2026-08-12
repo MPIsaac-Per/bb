@@ -1,11 +1,48 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { dirname, join } from "node:path";
 import { PiSdkSession } from "../sdk-session.js";
 
 const testRoots: string[] = [];
+
+async function writeTestSessionFile(
+  filePath: string,
+  cwd: string,
+  id: string,
+): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
+  const userEntryId = `${id}-user`;
+  await writeFile(
+    filePath,
+    `${[
+      JSON.stringify({
+        type: "session",
+        version: 3,
+        id,
+        timestamp: "2026-08-12T00:00:00.000Z",
+        cwd,
+      }),
+      JSON.stringify({
+        type: "message",
+        id: userEntryId,
+        parentId: null,
+        timestamp: "2026-08-12T00:00:01.000Z",
+        message: { role: "user", content: "fork point" },
+      }),
+      JSON.stringify({
+        type: "message",
+        id: `${id}-assistant`,
+        parentId: userEntryId,
+        timestamp: "2026-08-12T00:00:02.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "ready" }],
+        },
+      }),
+    ].join("\n")}\n`,
+  );
+}
 
 async function createLifecycleFixture(): Promise<{
   cwd: string;
@@ -33,18 +70,18 @@ async function createLifecycleFixture(): Promise<{
     `import { appendFileSync } from "node:fs";
 export default function extension(pi): void {
   pi.on("session_start", (event) => {
-    appendFileSync(${JSON.stringify(markerPath)}, event.type + "\\n", "utf8");
+    appendFileSync(${JSON.stringify(markerPath)}, event.type + ":" + event.reason + "\\n", "utf8");
   });
   pi.on("session_shutdown", (event) => {
-    appendFileSync(${JSON.stringify(markerPath)}, event.type + "\\n", "utf8");
+    appendFileSync(${JSON.stringify(markerPath)}, event.type + ":" + event.reason + "\\n", "utf8");
   });
 }
 `,
   );
   vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
 
-  const sessionFilePath = SessionManager.create(cwd, root).getSessionFile();
-  if (!sessionFilePath) throw new Error("Expected a persistent session file");
+  const sessionFilePath = join(root, "initial.jsonl");
+  await writeTestSessionFile(sessionFilePath, cwd, "initial");
 
   return { cwd, markerPath, sessionFilePath };
 }
@@ -57,37 +94,26 @@ afterEach(async () => {
 });
 
 describe("PiSdkSession extension lifecycle", () => {
-  it("starts configured extensions before accepting prompts", async () => {
-    const { cwd, markerPath } = await createLifecycleFixture();
-    const session = new PiSdkSession({ cwd }, vi.fn(), vi.fn());
-
-    await session.start();
-
-    await expect(readFile(markerPath, "utf8")).resolves.toBe("session_start\n");
-    await session.closeGracefully(1_000);
-  });
-
-  it("rebinds extensions when a persisted session is replaced", async () => {
+  it("starts configured extensions for new and resumed bb threads", async () => {
     const { cwd, markerPath, sessionFilePath } = await createLifecycleFixture();
-    const session = new PiSdkSession(
+    const newThread = new PiSdkSession({ cwd }, vi.fn(), vi.fn());
+
+    await newThread.start();
+    await newThread.closeGracefully(1_000);
+
+    const resumedThread = new PiSdkSession(
       { cwd, sessionFilePath },
       vi.fn(),
       vi.fn(),
     );
-
-    await session.start();
-    await session.closeGracefully(1_000);
-
-    const replacement = new PiSdkSession(
-      { cwd, sessionFilePath },
-      vi.fn(),
-      vi.fn(),
-    );
-    await replacement.start();
-    await replacement.closeGracefully(1_000);
+    await resumedThread.start();
+    await resumedThread.closeGracefully(1_000);
 
     await expect(readFile(markerPath, "utf8")).resolves.toBe(
-      "session_start\nsession_shutdown\nsession_start\nsession_shutdown\n",
+      "session_start:startup\n" +
+        "session_shutdown:quit\n" +
+        "session_start:startup\n" +
+        "session_shutdown:quit\n",
     );
   });
 });
