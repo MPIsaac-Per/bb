@@ -127,12 +127,15 @@ const originalPiBridgeSessionDir = process.env[PI_BRIDGE_SESSION_DIR_ENV];
 
 interface ControlledPiAgentSession {
   abort: ReturnType<typeof vi.fn>;
+  bindExtensions: ReturnType<typeof vi.fn>;
   compact: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
   emit(event: AgentSessionEvent): void;
+  extensionRunner: { emit: ReturnType<typeof vi.fn> };
   finishAbort(): void;
   getActiveToolNames: ReturnType<typeof vi.fn>;
   getContextUsage: ReturnType<typeof vi.fn>;
+  hasExtensionHandlers: ReturnType<typeof vi.fn>;
   isStreaming: boolean;
   prompt: ReturnType<typeof vi.fn>;
   sessionManager: { getLeafId: ReturnType<typeof vi.fn> };
@@ -151,6 +154,7 @@ function createControlledPiAgentSession(): ControlledPiAgentSession {
   );
   return {
     abort,
+    bindExtensions: vi.fn(async () => undefined),
     compact: vi.fn(async () => undefined),
     dispose: vi.fn(),
     emit(event: AgentSessionEvent): void {
@@ -158,6 +162,7 @@ function createControlledPiAgentSession(): ControlledPiAgentSession {
         listener(event);
       }
     },
+    extensionRunner: { emit: vi.fn(async () => undefined) },
     finishAbort() {
       if (!finishAbort) {
         throw new Error("Expected Pi abort to be waiting");
@@ -167,6 +172,7 @@ function createControlledPiAgentSession(): ControlledPiAgentSession {
     },
     getActiveToolNames: vi.fn(() => []),
     getContextUsage: vi.fn(() => undefined),
+    hasExtensionHandlers: vi.fn(() => false),
     isStreaming: false,
     prompt: vi.fn(async () => {}),
     sessionManager: { getLeafId: vi.fn(() => "pi-entry-checkpoint") },

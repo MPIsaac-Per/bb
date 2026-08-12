@@ -91,8 +91,11 @@ const {
   const mockPrompt = vi.fn();
   const mockAbort = vi.fn(async () => {});
   const mockCompact = vi.fn(async () => {});
+  const mockBindExtensions = vi.fn(async () => {});
   const mockDispose = vi.fn();
   const mockGetLeafId = vi.fn(() => "pi-entry-checkpoint");
+  const mockExtensionEmit = vi.fn(async () => {});
+  const mockHasExtensionHandlers = vi.fn(() => false);
   const mockGetSessionStats = vi.fn();
   const mockGetContextUsage = vi.fn();
   const mockGetActiveToolNames = vi.fn<() => string[]>(() => []);
@@ -125,13 +128,16 @@ const {
   const mockCreateAgentSession = vi.fn(async () => ({
     session: {
       abort: mockAbort,
+      bindExtensions: mockBindExtensions,
       compact: mockCompact,
       subscribe: mockSubscribe,
       prompt: mockPrompt,
       dispose: mockDispose,
+      extensionRunner: { emit: mockExtensionEmit },
       getSessionStats: mockGetSessionStats,
       getContextUsage: mockGetContextUsage,
       getActiveToolNames: mockGetActiveToolNames,
+      hasExtensionHandlers: mockHasExtensionHandlers,
       setActiveToolsByName: mockSetActiveToolsByName,
       sessionManager: { getLeafId: mockGetLeafId },
       get isStreaming() {
@@ -179,11 +185,14 @@ const {
     mockInMemory,
     mockCreateAgentSessionServices,
     mockCreateAgentSession,
+    mockBindExtensions,
     mockSessionState,
     mockSessionEventListeners,
     mockAbort,
     mockCompact,
     mockDispose,
+    mockExtensionEmit,
+    mockHasExtensionHandlers,
     mockPrompt,
     mockGetModel,
     mockGetModels,
