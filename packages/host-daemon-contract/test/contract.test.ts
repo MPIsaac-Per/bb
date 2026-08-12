@@ -495,7 +495,7 @@ const SETTLED_RESPONSE_RESULT_FIXTURES: SettledResponseResultFixtures = {
   "turn.submit": {
     appliedAs: "new-turn",
   },
-  "thread.stop": {},
+  "thread.stop": { providerCheckpointId: null },
   "thread.goal.clear": { cleared: true },
   "thread.plan.cancel": { cancelled: true },
   "thread.rename": {},
@@ -1056,12 +1056,13 @@ describe("host-daemon local schemas", () => {
 });
 
 describe("host-daemon command schemas", () => {
-  // Version 106 preserves an unknown Claude Code release channel when doctor
-  // cannot report it and recovers native update actions for standard installs.
-  // Older daemons can verify stable against latest or hide the managed update,
-  // so enrolled machines must update for the corrected status behavior.
-  it("uses protocol version 106 for Claude Code status fixes", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(106);
+  // Version 108 adds the distinct `unborn_head` provisioning failure sent by
+  // the daemon when a project source has no commits. Older daemons report the
+  // internal missing-default-branch failure, so enrolled machines must update
+  // for the actionable worktree error. Version 107 carried stopped-turn
+  // provider checkpoints and remains part of the protocol lineage.
+  it("uses protocol version 108 for commitless worktree source errors", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(108);
   });
 
   it("binds Plan cancellation to a required turn id and typed result", () => {

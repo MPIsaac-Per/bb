@@ -6,8 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { WorkerPoolContextProvider } from "@pierre/diffs/react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   findLocalPathProjectSourceForHost,
   type EnvironmentStatus,
@@ -193,8 +192,7 @@ import {
 import { useScopedBranchSelection } from "./root-compose-branch-selection";
 import {
   buildReuseThreadOptions,
-  isProjectSourceWorktreeUnavailable,
-  PROJECT_SOURCE_WORKTREE_DISABLED_REASON,
+  resolveProjectSourceWorktreeDisabledReason,
   resolveComposeHostId,
   resolveRootComposeEffectiveEnvironmentValue,
   resolveRootComposeProjectRouting,
@@ -236,10 +234,6 @@ import {
   resolveThreadWorkspacePreviewRootPath,
 } from "./thread-detail/threadWorkspaceOpenPath";
 import {
-  createDiffWorker,
-  getDiffWorkerPoolSize,
-} from "@/lib/diff-worker-pool";
-import {
   useAppCommandHandler,
   useAppCommandShortcut,
 } from "@/components/commands/AppCommandProvider";
@@ -271,11 +265,6 @@ const ROOT_COMPOSE_EMPTY_WELCOME_CONTENT_CLASS =
   "min-h-full flex-1 items-center justify-center pb-12";
 const ROOT_COMPOSE_FIXED_PANEL_STATE_ID = "root-compose";
 const EMPTY_TERMINAL_SESSIONS: readonly TerminalSession[] = [];
-const FILE_PREVIEW_WORKER_POOL_OPTIONS = {
-  workerFactory: createDiffWorker,
-  poolSize: getDiffWorkerPoolSize(),
-};
-const FILE_PREVIEW_HIGHLIGHTER_OPTIONS = {};
 
 type ProjectSelectionChangeHandler = NewThreadProjectConfig["onChange"];
 type SecondaryPanelChangeHandler = (panel: ThreadSecondaryPanelTab) => void;
@@ -728,23 +717,6 @@ export function LegacyProjectComposeRedirect({
         Loading…
       </p>
     </PageShell>
-  );
-}
-
-export function RootComposeRoute() {
-  const { projectId } = useParams<{ projectId: string }>();
-
-  if (projectId) {
-    return <LegacyProjectComposeRedirect projectId={projectId} />;
-  }
-
-  return (
-    <WorkerPoolContextProvider
-      poolOptions={FILE_PREVIEW_WORKER_POOL_OPTIONS}
-      highlighterOptions={FILE_PREVIEW_HIGHLIGHTER_OPTIONS}
-    >
-      <RootComposeView />
-    </WorkerPoolContextProvider>
   );
 }
 
@@ -1350,9 +1322,10 @@ export function RootComposeView() {
     },
   );
   const activeBranchesQuery = hostBranchesQuery;
-  const projectSourceWorktreeUnavailable = isProjectSourceWorktreeUnavailable(
-    activeBranchesQuery.data,
-  );
+  const projectSourceWorktreeDisabledReason =
+    resolveProjectSourceWorktreeDisabledReason(activeBranchesQuery.data);
+  const projectSourceWorktreeUnavailable =
+    projectSourceWorktreeDisabledReason !== null;
   const selectedEnvironmentRequestsManagedWorktree =
     parsedEnvironment?.type === "host" && parsedEnvironment.mode === "worktree";
   const managedWorktreeAvailabilityPending =
@@ -3234,9 +3207,7 @@ export function RootComposeView() {
       onChange: handleEnvironmentSelectionValueChange,
       sources: projectSources,
       reuseDisabled: reuseThreadOptions.length === 0,
-      worktreeDisabledReason: projectSourceWorktreeUnavailable
-        ? PROJECT_SOURCE_WORKTREE_DISABLED_REASON
-        : null,
+      worktreeDisabledReason: projectSourceWorktreeDisabledReason,
       disabled: isForkDraft,
       ...(isProjectless
         ? {}
@@ -3248,7 +3219,7 @@ export function RootComposeView() {
       isProjectless,
       handleEnvironmentSelectionValueChange,
       handleRequestMachineSetup,
-      projectSourceWorktreeUnavailable,
+      projectSourceWorktreeDisabledReason,
       projectSources,
       reuseThreadOptions.length,
     ],

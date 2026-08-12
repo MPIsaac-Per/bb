@@ -275,8 +275,6 @@ export class PiSdkSession {
     });
     this.session = session;
 
-    await session.bindExtensions({ mode: "rpc" });
-
     this.ensureCustomToolsActive();
 
     // Subscribe to session events
@@ -367,22 +365,24 @@ export class PiSdkSession {
       "Pi SDK session stopped before steer consumed",
     );
     this.detach();
-    const session = this.session;
-    this.session = undefined;
-    if (session) void this.disposeSession(session);
+    if (this.session) {
+      this.session.dispose();
+      this.session = undefined;
+    }
   }
 
-  async closeGracefully(timeoutMs: number): Promise<void> {
+  async closeGracefully(timeoutMs: number): Promise<string | undefined> {
     const session = this.session;
     this.rejectPendingSteerConsumptions(
       "Pi SDK session closed before steer consumed",
     );
     this.detach();
     if (!session) {
-      return;
+      return undefined;
     }
 
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    let providerCheckpointId: string | undefined;
     const abortCompleted = session.abort().catch(() => undefined);
     const timeoutReached = new Promise<void>((resolve) => {
       timeout = setTimeout(resolve, timeoutMs);
@@ -393,26 +393,15 @@ export class PiSdkSession {
       if (timeout) {
         clearTimeout(timeout);
       }
-      await this.disposeSession(session);
+      providerCheckpointId = session.sessionManager.getLeafId() ?? undefined;
+      session.dispose();
       if (this.session === session) {
         this.session = undefined;
       }
       this.isProcessing = false;
       this.isCompacting = false;
     }
-  }
-
-  private async disposeSession(session: AgentSession): Promise<void> {
-    try {
-      if (session.hasExtensionHandlers("session_shutdown")) {
-        await session.extensionRunner.emit({
-          type: "session_shutdown",
-          reason: "quit",
-        });
-      }
-    } finally {
-      session.dispose();
-    }
+    return providerCheckpointId;
   }
 
   private trackProcessingState(event: AgentSessionEvent): void {
