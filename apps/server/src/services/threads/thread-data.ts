@@ -1,13 +1,14 @@
 import {
   findStoredEventRow as findStoredEventRowRecord,
+  getLatestThreadErrorEventRow,
   getLatestThreadOutputEventRow,
-  getLatestThreadSystemErrorEventRow,
   listStoredEventRows as listStoredEventRowRecords,
 } from "@bb/db";
 import type { DbConnection, StoredEventRow } from "@bb/db";
 import { buildThreadEventRow, parseStoredThreadEvent } from "@bb/domain";
 import { threadScope, turnScope } from "@bb/domain";
 import type {
+  StoredThreadEventDataForType,
   ThreadEvent,
   ThreadEventRow,
   ThreadEventScope,
@@ -164,13 +165,44 @@ export function getLastThreadOutput(
   return null;
 }
 
-/** Latest system/error message for a thread, or null when none exists. */
+/**
+ * Newest system/error or provider/error message for a thread, or null.
+ * Provider failures persist as provider/error, not system/error.
+ */
 export function getLastThreadErrorMessage(
   db: DbConnection,
   threadId: string,
 ): string | null {
-  const row = getLatestThreadSystemErrorEventRow(db, { threadId });
+  const row = getLatestThreadErrorEventRow(db, { threadId });
   if (!row) return null;
   const eventRow = parseStoredEventRow(row);
-  return eventRow.type === "system/error" ? eventRow.data.message : null;
+  if (eventRow.type === "system/error") {
+    return eventRow.data.message;
+  }
+  if (eventRow.type === "provider/error") {
+    return formatProviderError(eventRow.data);
+  }
+  return null;
+}
+
+/** Detail (else message), then category, HTTP status, and provider code. */
+function formatProviderError(
+  data: StoredThreadEventDataForType<"provider/error">,
+): string {
+  const base =
+    data.detail !== undefined && data.detail.length > 0
+      ? data.detail
+      : data.message;
+  const info = data.errorInfo;
+  if (info === undefined) {
+    return base;
+  }
+  const parts = [base, `category: ${info.category}`];
+  if (info.httpStatusCode !== null) {
+    parts.push(`http: ${info.httpStatusCode}`);
+  }
+  if (info.providerCode !== null && info.providerCode.length > 0) {
+    parts.push(`providerCode: ${info.providerCode}`);
+  }
+  return parts.join(" | ");
 }

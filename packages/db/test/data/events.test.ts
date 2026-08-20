@@ -25,6 +25,7 @@ import {
   getLastStoredProviderThreadId,
   getLastStoredTurnRequestEvent,
   getLatestThreadOutputEventRow,
+  getLatestThreadErrorEventRow,
   getLatestThreadSequence,
   getStoredTimelineWindowEventDataBytes,
   insertEvents,
@@ -1108,6 +1109,53 @@ describe("events", () => {
     ).toMatchObject({
       sequence: 1,
       type: "system/manager/user_message",
+    });
+  });
+
+  it("returns the newest system/error or provider/error by sequence", () => {
+    const { db, thread } = setup();
+
+    insertEvents(db, noopNotifier, [
+      {
+        threadId: thread.id,
+        sequence: 1,
+        type: "system/error",
+        ...threadEventFields,
+        data: JSON.stringify({ message: "older system" }),
+      },
+      {
+        threadId: thread.id,
+        sequence: 2,
+        type: "provider/error",
+        ...threadEventFields,
+        providerThreadId: "prov-1",
+        data: JSON.stringify({
+          message: "retryable",
+          willRetry: true,
+        }),
+      },
+      {
+        threadId: thread.id,
+        sequence: 3,
+        type: "turn/completed",
+        ...createTurnEventFields({ turnId: "turn-1" }),
+        data: JSON.stringify({ status: "failed" }),
+      },
+      {
+        threadId: thread.id,
+        sequence: 4,
+        type: "provider/error",
+        ...threadEventFields,
+        providerThreadId: "prov-1",
+        data: JSON.stringify({ message: "terminal" }),
+      },
+    ]);
+
+    expect(
+      getLatestThreadErrorEventRow(db, { threadId: thread.id }),
+    ).toMatchObject({
+      sequence: 4,
+      type: "provider/error",
     });
   });
 

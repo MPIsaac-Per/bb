@@ -197,6 +197,127 @@ describe("plugin thread lifecycle events", () => {
     }
   });
 
+  it("delivers thread.failed with a provider/error detail and metadata", async () => {
+    const recorded: RecordedThreadPayload[] = [];
+    globals.__failedEvents = recorded;
+    const { harness, cleanup } = await setUpPluginHarness(`
+      export default function plugin(bb: any) {
+        bb.events.on("thread.failed", (payload: any) => {
+          (globalThis as any).__failedEvents.push(payload);
+        });
+      }
+    `);
+    try {
+      const { environment, thread } = seedThreadFixture(harness, {
+        thread: { status: "active" },
+      });
+      seedEvent(harness.deps, {
+        threadId: thread.id,
+        environmentId: environment.id,
+        scope: threadScope(),
+        sequence: 1,
+        type: "provider/error",
+        providerThreadId: "prov-1",
+        data: {
+          threadId: thread.id,
+          providerThreadId: "prov-1",
+          message: "model errored",
+          detail: "429 rate limit: too many requests",
+          errorInfo: {
+            category: "rate-limit",
+            httpStatusCode: 429,
+            providerCode: "rate_limit_event",
+          },
+        },
+      });
+
+      const outcome = applyLoggedThreadLifecycleEvent(lifecycleDeps(harness), {
+        threadId: thread.id,
+        event: { type: "run.failed" },
+      });
+      expect(outcome.applied).toBe(true);
+
+      await vi.waitFor(() => expect(recorded).toHaveLength(1));
+      expect(recorded[0]?.thread.id).toBe(thread.id);
+      expect(recorded[0]?.thread.status).toBe("error");
+      expect(recorded[0]?.error).toBe(
+        "429 rate limit: too many requests | category: rate-limit | http: 429 | providerCode: rate_limit_event",
+      );
+    } finally {
+      delete globals.__failedEvents;
+      await cleanup();
+    }
+  });
+
+  it("surfaces a terminal provider/error over an earlier willRetry provider/error", async () => {
+    const recorded: RecordedThreadPayload[] = [];
+    globals.__failedEvents = recorded;
+    const { harness, cleanup } = await setUpPluginHarness(`
+      export default function plugin(bb: any) {
+        bb.events.on("thread.failed", (payload: any) => {
+          (globalThis as any).__failedEvents.push(payload);
+        });
+      }
+    `);
+    try {
+      const { environment, thread } = seedThreadFixture(harness, {
+        thread: { status: "active" },
+      });
+      seedEvent(harness.deps, {
+        threadId: thread.id,
+        environmentId: environment.id,
+        scope: threadScope(),
+        sequence: 1,
+        type: "provider/error",
+        providerThreadId: "prov-1",
+        data: {
+          threadId: thread.id,
+          providerThreadId: "prov-1",
+          message: "transient 429",
+          detail: "will retry",
+          willRetry: true,
+          errorInfo: {
+            category: "rate-limit",
+            httpStatusCode: 429,
+            providerCode: "rate_limit_event",
+          },
+        },
+      });
+      seedEvent(harness.deps, {
+        threadId: thread.id,
+        environmentId: environment.id,
+        scope: threadScope(),
+        sequence: 2,
+        type: "provider/error",
+        providerThreadId: "prov-1",
+        data: {
+          threadId: thread.id,
+          providerThreadId: "prov-1",
+          message: "terminal failure after retries",
+          errorInfo: {
+            category: "internal",
+            httpStatusCode: 500,
+            providerCode: "internal_error",
+          },
+        },
+      });
+
+      const outcome = applyLoggedThreadLifecycleEvent(lifecycleDeps(harness), {
+        threadId: thread.id,
+        event: { type: "run.failed" },
+      });
+      expect(outcome.applied).toBe(true);
+
+      await vi.waitFor(() => expect(recorded).toHaveLength(1));
+      expect(recorded[0]?.error).toBe(
+        "terminal failure after retries | category: internal | http: 500 | providerCode: internal_error",
+      );
+    } finally {
+      delete globals.__failedEvents;
+      await cleanup();
+    }
+  });
+
   it("delivers thread.created from the thread creation seam", async () => {
     const recorded: RecordedThreadPayload[] = [];
     globals.__createdEvents = recorded;

@@ -1183,6 +1183,10 @@ export interface GetLatestThreadSystemErrorEventRowArgs {
   threadId: string;
 }
 
+export interface GetLatestThreadErrorEventRowArgs {
+  threadId: string;
+}
+
 export interface GetLatestThreadSequenceArgs {
   threadId: string;
 }
@@ -3178,6 +3182,31 @@ export function getLatestThreadSystemErrorEventRow(
       .from(events)
       .where(
         and(eq(events.threadId, args.threadId), eq(events.type, "system/error")),
+      )
+      .orderBy(desc(events.sequence))
+      .limit(1)
+      .get() ?? null
+  );
+}
+
+/**
+ * Newest system/error or provider/error for one thread.
+ * Sequence descending: a later terminal failure outranks an earlier
+ * willRetry provider/error.
+ */
+export function getLatestThreadErrorEventRow(
+  db: DbConnection,
+  args: GetLatestThreadErrorEventRowArgs,
+): StoredEventRow | null {
+  return (
+    db
+      .select(storedEventRowFields)
+      .from(events)
+      .where(
+        and(
+          eq(events.threadId, args.threadId),
+          inArray(events.type, ["system/error", "provider/error"]),
+        ),
       )
       .orderBy(desc(events.sequence))
       .limit(1)
