@@ -163,4 +163,65 @@ describe("GitHub app navigation", () => {
     );
     slot.lifecycle.unmount();
   });
+  it("names the repository on each row so a cross-repo list is unambiguous", async () => {
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "issues" },
+      {
+        rpc: {
+          listItems: () => ({
+            items: [
+              {
+                repo: "get-bb/bb",
+                number: 42,
+                kind: "issue",
+                title: "Same number, different repo",
+                state: "OPEN",
+                author: "octocat",
+                labels: [],
+                assignees: [],
+                url: "https://github.com/get-bb/bb/issues/42",
+                body: "",
+                updatedAt: "2026-08-20T00:00:00.000Z",
+              },
+              {
+                repo: "acme/widgets",
+                number: 42,
+                kind: "issue",
+                title: "Also number 42",
+                state: "OPEN",
+                author: "octocat",
+                labels: [],
+                assignees: [],
+                url: "https://github.com/acme/widgets/issues/42",
+                body: "",
+                updatedAt: "2026-08-20T00:00:00.000Z",
+              },
+            ],
+          }),
+          listLinks: () => ({ links: {} }),
+          status: () => ({
+            ghOk: true,
+            ghState: "ready",
+            ghError: null,
+            repos: [
+              { repo: "get-bb/bb", projectId: null },
+              { repo: "acme/widgets", projectId: null },
+            ],
+            lastSyncedAt: null,
+          }),
+          viewer: () => ({ login: "octocat" }),
+        },
+      },
+    );
+
+    // Both rows read "#42", so the repo name is the only thing telling them
+    // apart. The owner is dropped from the cell but kept in its title.
+    expect(await slot.findByText("bb")).toBeTruthy();
+    expect(await slot.findByText("widgets")).toBeTruthy();
+    expect(
+      slot.container.querySelector('[title="acme/widgets"]'),
+    ).not.toBeNull();
+    slot.lifecycle.unmount();
+  });
 });

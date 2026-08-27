@@ -46,6 +46,29 @@ const syncResultSchema = z
   })
   .strict();
 const okResultSchema = z.object({ ok: z.literal(true) }).strict();
+// Why a repo is (or is not) tracked. Only "selected" is toggleable from the
+// picker: "project" repos come from a BB project checkout and "extra" repos
+// come from the extraRepos setting, and a plugin can read its declarative
+// settings but not write them, so the picker shows both locked on.
+const trackingSchema = z.enum(["project", "selected", "extra", "off"]);
+const ownerRepoSchema = z
+  .object({
+    repo: repoNameSchema,
+    pushedAt: z.string(),
+    isPrivate: z.boolean(),
+    isFork: z.boolean(),
+  })
+  .strict();
+const trackedOwnerRepoSchema = ownerRepoSchema
+  .extend({ tracking: trackingSchema })
+  .strict();
+const ownerSchema = z
+  .object({
+    owner: z.string().min(1),
+    kind: z.enum(["user", "organization"]),
+    repos: z.array(trackedOwnerRepoSchema),
+  })
+  .strict();
 const commentSchema = z
   .object({ author: z.string(), body: z.string(), createdAt: z.string() })
   .strict();
@@ -137,6 +160,23 @@ export const githubRpcContract = defineRpcContract({
       .strict(),
   },
   refresh: { input: z.null(), output: syncResultSchema },
+  listOwners: {
+    input: z.object({ refresh: z.boolean() }).strict(),
+    output: z
+      .object({
+        owners: z.array(ownerSchema),
+        /** extraRepos entries that are not `owner/repo`, echoed so the picker
+            can explain why they track nothing. */
+        invalidExtraRepos: z.array(z.string()),
+      })
+      .strict(),
+  },
+  setRepoTracked: {
+    input: z.object({ repo: repoNameSchema, tracked: z.boolean() }).strict(),
+    output: z
+      .object({ ok: z.literal(true), selected: z.array(repoNameSchema) })
+      .strict(),
+  },
   listItems: {
     input: z
       .object({
@@ -260,6 +300,13 @@ export const githubRpcContract = defineRpcContract({
 
 type RepoInfo = z.infer<typeof repoInfoSchema>;
 type CachedItem = z.infer<typeof itemSchema>;
+type OwnerRepo = z.infer<typeof ownerRepoSchema>;
+
+interface OwnerListing {
+  owner: string;
+  kind: "user" | "organization";
+  repos: OwnerRepo[];
+}
 
 interface GhListEntry {
   number?: unknown;
@@ -403,10 +450,23 @@ export function validateGithubCliArgs(argv: string[]): string | null {
   if (sub === "help" || sub === "--help") {
     return arg === undefined ? null : `Unexpected argument "${arg}".`;
   }
-  if (sub === "repos" || sub === "sync") {
+  if (sub === "repos") {
+    return arg === undefined || arg === "--available"
+      ? null
+      : `Subcommand "repos" accepts only --available.`;
+  }
+  if (sub === "sync") {
     return arg === undefined
       ? null
       : `Subcommand "${sub}" does not accept arguments.`;
+  }
+  if (sub === "track" || sub === "untrack") {
+    if (arg === undefined) {
+      return `Subcommand "${sub}" needs an owner/repo argument.`;
+    }
+    return isRepoName(arg)
+      ? null
+      : `Invalid repository "${arg}"; expected owner/repo.`;
   }
   if ((sub === "issues" || sub === "prs") && arg !== undefined) {
     return isRepoName(arg)
@@ -632,6 +692,9 @@ export default async function plugin(bb: BbPluginApi) {
         `project discovery failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    for (const repo of await getSelectedRepos()) {
+      if (!byRepo.has(repo)) byRepo.set(repo, { repo, projectId: null });
+    }
     const { extraRepos } = await settings.get();
     const parsed = parseExtraRepos(extraRepos);
     for (const raw of parsed.repos) {
@@ -652,6 +715,99 @@ export default async function plugin(bb: BbPluginApi) {
     return repos;
   }
 
+  // ------------------------------------------------------------------
+  // Repo picker. The checked repos live in plugin storage rather than in the
+  // extraRepos setting because a plugin can read its declarative settings but
+  // not write them, so the picker cannot edit that list on the user's behalf.
+  // ------------------------------------------------------------------
+  const SELECTED_REPOS_KEY = "selected-repos";
+  const OWNER_CACHE_MS = 5 * 60_000;
+  const OWNER_REPO_LIMIT = 200;
+  let ownerCache: { owners: OwnerListing[]; fetchedAt: number } | null = null;
+
+  async function getSelectedRepos(): Promise<string[]> {
+    const raw = await bb.storage.kv.get<unknown>(SELECTED_REPOS_KEY);
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(isRepoName);
+  }
+
+  async function updateRepoTracked(
+    repo: string,
+    tracked: boolean,
+  ): Promise<string[]> {
+    const current = new Set(await getSelectedRepos());
+    if (tracked) current.add(repo);
+    else current.delete(repo);
+    const next = [...current].sort();
+    await bb.storage.kv.set(SELECTED_REPOS_KEY, next);
+    // The next sync has to see the change, so drop the discovery cache.
+    repoCache = null;
+    return next;
+  }
+
+  async function listRepositoriesFor(owner: string): Promise<OwnerRepo[]> {
+    const raw = await gh([
+      "repo", "list", owner, "--no-archived",
+      "--limit", String(OWNER_REPO_LIMIT),
+      "--json", "nameWithOwner,pushedAt,isPrivate,isFork",
+    ], 30_000);
+    const entries = JSON.parse(raw) as Array<{
+      nameWithOwner?: unknown;
+      pushedAt?: unknown;
+      isPrivate?: unknown;
+      isFork?: unknown;
+    }>;
+    return entries
+      .filter((entry) => isRepoName(entry?.nameWithOwner))
+      .map((entry) => ({
+        repo: String(entry.nameWithOwner),
+        pushedAt: String(entry.pushedAt ?? ""),
+        isPrivate: entry.isPrivate === true,
+        isFork: entry.isFork === true,
+      }))
+      .sort((a, b) => b.pushedAt.localeCompare(a.pushedAt));
+  }
+
+  // The viewer's own account plus every org they belong to. Cached because
+  // this is several gh round-trips and the answer changes rarely.
+  async function listOwnersWithRepos(force: boolean): Promise<OwnerListing[]> {
+    if (
+      !force &&
+      ownerCache !== null &&
+      Date.now() - ownerCache.fetchedAt < OWNER_CACHE_MS
+    ) {
+      return ownerCache.owners;
+    }
+    const viewer = await getViewer();
+    const orgsRaw = await gh(["api", "user/orgs", "--paginate"], 30_000);
+    const orgs = (JSON.parse(orgsRaw) as Array<{ login?: unknown }>)
+      .map((org) => String(org?.login ?? ""))
+      .filter((login) => login.length > 0);
+    const names: Array<{ owner: string; kind: "user" | "organization" }> = [
+      { owner: viewer, kind: "user" },
+      ...orgs.map((owner) => ({ owner, kind: "organization" as const })),
+    ];
+    // One owner failing, say an org whose repos the token cannot list, must
+    // not blank out the whole picker.
+    const owners = await Promise.all(
+      names.map(async ({ owner, kind }) => {
+        try {
+          return { owner, kind, repos: await listRepositoriesFor(owner) };
+        } catch (error) {
+          bb.log.warn(
+            `listing repositories for ${owner} failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          return { owner, kind, repos: [] };
+        }
+      }),
+    );
+    ownerCache = { owners, fetchedAt: Date.now() };
+    return owners;
+  }
+
+  // ------------------------------------------------------------------
+  // SQLite cache of open issues + PRs across tracked repos.
+  // ------------------------------------------------------------------
   const db = bb.storage.database();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS items (
@@ -1066,6 +1222,57 @@ export default async function plugin(bb: BbPluginApi) {
       return await syncAll(true);
     },
 
+    /** { refresh } → every owner the viewer can see, each repo carrying why
+        it is or is not tracked, for the settings picker. */
+    async listOwners(input) {
+      await checkAuth();
+      const [owners, selected, discovered, { extraRepos }] = await Promise.all([
+        listOwnersWithRepos(input.refresh),
+        getSelectedRepos(),
+        discoverRepos(),
+        settings.get(),
+      ]);
+      const selectedSet = new Set(selected);
+      const extra = parseExtraRepos(extraRepos);
+      const extraSet = new Set(extra.repos);
+      const projectRepos = new Set(
+        discovered
+          .filter((entry) => entry.projectId !== null)
+          .map((entry) => entry.repo),
+      );
+      return {
+        owners: owners.map((owner) => ({
+          owner: owner.owner,
+          kind: owner.kind,
+          repos: owner.repos.map((repo) => ({
+            ...repo,
+            tracking: projectRepos.has(repo.repo)
+              ? ("project" as const)
+              : selectedSet.has(repo.repo)
+                ? ("selected" as const)
+                : extraSet.has(repo.repo)
+                  ? ("extra" as const)
+                  : ("off" as const),
+          })),
+        })),
+        invalidExtraRepos: extra.ignored,
+      };
+    },
+
+    /** { repo, tracked } → add or drop a repo from the picker selection. */
+    async setRepoTracked(input) {
+      const selected = await updateRepoTracked(input.repo, input.tracked);
+      // Pull the new repo's issues and PRs in now: a checkbox that leaves the
+      // tables empty until the next tick reads as broken.
+      void syncAll(true).catch((error: unknown) => {
+        bb.log.warn(
+          `sync after a tracking change failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+      return { ok: true as const, selected };
+    },
+
+    /** { kind?, repo?, query?, state?, mine? } → cached items, newest first. */
     async listItems(input) {
       return {
         items: listCachedItems({
@@ -1609,6 +1816,9 @@ export default async function plugin(bb: BbPluginApi) {
   const USAGE = [
     "Usage:",
     "  bb github repos              List tracked repositories",
+    "  bb github repos --available  List every repo you can track, with state",
+    "  bb github track <repo>       Track owner/repo",
+    "  bb github untrack <repo>     Stop tracking owner/repo",
     "  bb github issues [repo]      List cached open issues",
     "  bb github prs [repo]         List cached open pull requests",
     "  bb github sync               Refresh the cache from GitHub now",
@@ -1618,26 +1828,12 @@ export default async function plugin(bb: BbPluginApi) {
     name: "github",
     summary: "Browse tracked GitHub repos, issues, and PRs",
     commands: [
-      {
-        name: "repos",
-        summary: "List tracked repositories",
-        usage: "bb github repos",
-      },
-      {
-        name: "issues",
-        summary: "List cached open issues",
-        usage: "bb github issues [owner/repo]",
-      },
-      {
-        name: "prs",
-        summary: "List cached open pull requests",
-        usage: "bb github prs [owner/repo]",
-      },
-      {
-        name: "sync",
-        summary: "Refresh the cache from GitHub now",
-        usage: "bb github sync",
-      },
+      { name: "repos", summary: "List tracked repositories", usage: "bb github repos [--available]" },
+      { name: "track", summary: "Track a repository", usage: "bb github track <owner/repo>" },
+      { name: "untrack", summary: "Stop tracking a repository", usage: "bb github untrack <owner/repo>" },
+      { name: "issues", summary: "List cached open issues", usage: "bb github issues [owner/repo]" },
+      { name: "prs", summary: "List cached open pull requests", usage: "bb github prs [owner/repo]" },
+      { name: "sync", summary: "Refresh the cache from GitHub now", usage: "bb github sync" },
     ],
     async run(argv) {
       const [sub, arg] = argv;
@@ -1649,6 +1845,50 @@ export default async function plugin(bb: BbPluginApi) {
         if (sub === undefined || sub === "help" || sub === "--help") {
           return { exitCode: 0, stdout: USAGE };
         }
+        if (sub === "repos" && arg === "--available") {
+          const owners = await listOwnersWithRepos(false);
+          const selected = new Set(await getSelectedRepos());
+          const projectRepos = new Set(
+            (await discoverRepos())
+              .filter((entry) => entry.projectId !== null)
+              .map((entry) => entry.repo),
+          );
+          const lines = owners.flatMap((owner) =>
+            owner.repos.map((repo) => {
+              const state = projectRepos.has(repo.repo)
+                ? "project"
+                : selected.has(repo.repo)
+                  ? "tracked"
+                  : "-";
+              return `${repo.repo}\t${state}`;
+            }),
+          );
+          if (lines.length === 0) {
+            return { exitCode: 0, stdout: "No repositories are visible to the authenticated gh account." };
+          }
+          return { exitCode: 0, stdout: lines.join("\n") };
+        }
+        if (sub === "track" || sub === "untrack") {
+          if (!isRepoName(arg)) {
+            return { exitCode: 1, stderr: `Subcommand "${sub}" needs an owner/repo argument.\n${USAGE}` };
+          }
+          const selected = await updateRepoTracked(arg, sub === "track");
+          const { repos, items } = await syncAll(true);
+          // Untracking clears the picker selection only. A repo a BB project
+          // points at, or that extraRepos names, stays tracked.
+          const stillTracked =
+            sub === "untrack" &&
+            (await discoverRepos()).some((entry) => entry.repo === arg);
+          const note = stillTracked
+            ? " Still tracked through a BB project or the extraRepos setting."
+            : "";
+          return {
+            exitCode: 0,
+            stdout:
+              `${sub === "track" ? "Tracking" : "No longer selecting"} ${arg}.${note} ` +
+              `${selected.length} repo(s) selected, ${items} item(s) across ${repos} repo(s).`,
+          };
+        }
         if (sub === "repos") {
           const repos = await discoverRepos(true);
           const warning =
@@ -1659,7 +1899,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               exitCode: 0,
               stdout:
-                "No tracked repos. Attach a project with a GitHub remote or set extraRepos.",
+                "No tracked repos. Attach a project with a GitHub remote, pick repositories in Settings, or set extraRepos.",
               ...warning,
             };
           }
