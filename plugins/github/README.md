@@ -22,8 +22,11 @@ bb plugin install github
 - **Homepage section**: recent open issues with the same Send agent buttons.
 - **Mentions**: `@` or `#` in any composer completes GitHub issues and PRs; the
   selected item's title/body/state is attached as agent context at send time.
-- **`bb github` CLI**: `repos`, `issues [repo]`, `prs [repo]`, `sync` — also
-  discoverable by agents through the plugin-commands skill.
+- **Repo picker** (Settings → GitHub → Repositories): your account and every
+  org you belong to, with a checkbox per repo choosing which ones feed the tabs.
+- **`bb github` CLI**: `repos [--available]`, `track`, `untrack`,
+  `issues [repo]`, `prs [repo]`, `sync` — also discoverable by agents through
+  the plugin-commands skill.
 
 ## Auth
 
@@ -32,14 +35,28 @@ it reports needs-configuration. No tokens are stored by the plugin.
 
 ## Which repos are tracked
 
+The union of three sources:
+
 - Every BB project source whose checkout has a GitHub `origin` remote
   (repo → project mapping is also how spawn picks the project).
-- Plus the `extraRepos` setting: comma-separated `owner/repo` list.
-- `defaultProject` setting: where threads spawn for repos with no project.
+- Repos checked in Settings → GitHub → Repositories. The selection lives in
+  plugin storage rather than in `extraRepos`, because a plugin can read its
+  declarative settings but not write them. Repos from the other two sources
+  render checked and disabled, with the reason beside them.
+- The `extraRepos` setting: an explicit comma-separated `owner/repo` list.
+  Wildcards are not supported. `owner/*` tracks nothing, warns in the log, and
+  is called out in the picker; use the picker for whole-owner tracking.
+
+`defaultProject` decides where threads spawn for repos with no project of their
+own, which is every repo added through the picker or `extraRepos`. Set it
+before using Send agent on one.
+
+The same selection from the CLI:
 
 ```
-bb plugin config github set extraRepos "owner/repo, owner/other"
-bb plugin reload github
+bb github repos --available     # everything you can track, with its state
+bb github track owner/repo
+bb github untrack owner/repo    # clears the picker selection only
 ```
 
 A background service refreshes the issue/PR cache every 5 minutes; the

@@ -24,6 +24,7 @@ import {
   useBbNavigate,
   useRealtime,
   useRpc,
+  useSettings,
   type PluginNavPanelProps,
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
@@ -42,6 +43,13 @@ import type { githubRpcContract } from "./server.js";
 import { toast } from "sonner";
 import { Badge } from "@bb/shared-ui/badge";
 import { Button } from "@bb/shared-ui/button";
+import { Checkbox } from "@bb/shared-ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@bb/shared-ui/collapsible";
+import { Icon } from "@bb/shared-ui/icon";
 import { DelayedLoading } from "@bb/shared-ui/delayed-loading";
 import {
   DropdownMenu,
@@ -593,11 +601,19 @@ function FilterBar({
 // switches modes against its own width, not the browser viewport.
 const COL = {
   id: "shrink-0 @[48rem]:w-12",
+  repo: "hidden shrink-0 truncate @[48rem]:block @[48rem]:w-24 @[60rem]:w-32",
   assignee: "shrink-0 @[48rem]:w-20",
   status: "shrink-0 @[48rem]:w-24",
   updated: "hidden w-14 shrink-0 text-right @[48rem]:block",
   actions: "ml-auto flex shrink-0 items-center justify-end gap-1 @[48rem]:ml-0 @[48rem]:w-24",
 } as const;
+
+/** "owner/name" → "name". The owner is the same for most rows and costs the
+    width the title needs; the full name stays in the cell's title attribute. */
+function repoShortName(repo: string): string {
+  const slash = repo.indexOf("/");
+  return slash === -1 ? repo : repo.slice(slash + 1);
+}
 
 function AssigneeCell({ assignees }: { assignees: string[] }) {
   if (assignees.length === 0) {
@@ -755,6 +771,12 @@ function ItemRow({
           #{item.number}
         </span>
         <span
+          className={`${COL.repo} text-xs text-muted-foreground @[48rem]:order-1`}
+          title={item.repo}
+        >
+          {repoShortName(item.repo)}
+        </span>
+        <span
           className={`${COL.assignee} ${item.assignees.length === 0 ? "hidden @[48rem]:flex" : "flex"} text-xs text-muted-foreground @[48rem]:order-3`}
         >
           <AssigneeCell assignees={item.assignees} />
@@ -798,6 +820,9 @@ function TableSkeleton() {
             <span className="flex items-center gap-2 @[48rem]:contents">
               <span className={`${COL.id} @[48rem]:order-1`}>
                 <Skeleton className="h-3 w-10" />
+              </span>
+              <span className={`${COL.repo} @[48rem]:order-1`}>
+                <Skeleton className="h-3 w-20" />
               </span>
               <span className={`${COL.assignee} flex @[48rem]:order-3`}>
                 <Skeleton className="size-5 rounded-full @[48rem]:h-3 @[48rem]:w-16" />
@@ -880,6 +905,7 @@ function ItemsTable({
     <div className="@container overflow-hidden rounded-lg border border-border bg-card">
       <div className="hidden items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:flex">
         <span className={COL.id}>ID</span>
+        <span className={COL.repo}>Repo</span>
         <span className="min-w-0 flex-1">Title</span>
         <span className={COL.assignee}>Assignee</span>
         <span className={COL.status}>Status</span>
@@ -2224,7 +2250,294 @@ function GithubPanelBody({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Settings: pick which repos feed the Issues and Pull requests tabs.
+// ---------------------------------------------------------------------------
+
+interface OwnerRepoEntry {
+  repo: string;
+  pushedAt: string;
+  isPrivate: boolean;
+  isFork: boolean;
+  tracking: "project" | "selected" | "extra" | "off";
+}
+
+interface OwnerEntry {
+  owner: string;
+  kind: "user" | "organization";
+  repos: OwnerRepoEntry[];
+}
+
+/** Why a locked checkbox cannot be turned off, phrased for the settings page. */
+function lockReason(tracking: OwnerRepoEntry["tracking"]): string | null {
+  if (tracking === "project")
+    return "Tracked because a BB project checkout points at it";
+  if (tracking === "extra") return "Tracked by the extraRepos setting below";
+  return null;
+}
+
+function RepoRow({
+  entry,
+  busy,
+  onToggle,
+}: {
+  entry: OwnerRepoEntry;
+  busy: boolean;
+  onToggle: (tracked: boolean) => void;
+}) {
+  const locked = lockReason(entry.tracking);
+  const checked = entry.tracking !== "off";
+  return (
+    <label
+      className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+        locked === null ? "cursor-pointer hover:bg-accent/50" : "cursor-default"
+      }`}
+    >
+      <Checkbox
+        checked={checked}
+        disabled={locked !== null || busy}
+        onCheckedChange={(next) => onToggle(next === true)}
+      />
+      <span className="min-w-0 flex-1 truncate">
+        {entry.repo.slice(entry.repo.indexOf("/") + 1)}
+      </span>
+      {entry.isPrivate ? (
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          Private
+        </Badge>
+      ) : null}
+      {entry.isFork ? (
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          Fork
+        </Badge>
+      ) : null}
+      {locked !== null ? (
+        <span className="shrink-0 text-xs text-muted-foreground">{locked}</span>
+      ) : null}
+      <span className="w-14 shrink-0 text-right text-xs text-muted-foreground">
+        {entry.pushedAt === "" ? "" : relativeTime(entry.pushedAt)}
+      </span>
+    </label>
+  );
+}
+
+function OwnerGroup({
+  owner,
+  filter,
+  busyRepo,
+  onToggle,
+}: {
+  owner: OwnerEntry;
+  filter: string;
+  busyRepo: string | null;
+  onToggle: (repo: string, tracked: boolean) => void;
+}) {
+  const needle = filter.trim().toLowerCase();
+  const repos = useMemo(
+    () =>
+      needle === ""
+        ? owner.repos
+        : owner.repos.filter((entry) =>
+            entry.repo.toLowerCase().includes(needle),
+          ),
+    [owner.repos, needle],
+  );
+  const trackedCount = owner.repos.filter(
+    (entry) => entry.tracking !== "off",
+  ).length;
+  // Open the groups the user is already using, and any group a search matches.
+  const [open, setOpen] = useState(trackedCount > 0);
+  const expanded = needle === "" ? open : true;
+  if (repos.length === 0) return null;
+  return (
+    <Collapsible open={expanded} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium hover:bg-accent/50">
+        <Icon
+          name="ChevronRight"
+          className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`}
+        />
+        <span className="min-w-0 flex-1 truncate text-left">{owner.owner}</span>
+        <span className="shrink-0 text-xs font-normal text-muted-foreground">
+          {owner.kind === "user" ? "Your account" : "Organization"} ·{" "}
+          {trackedCount} of {owner.repos.length}
+        </span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="pl-5">
+          {repos.map((entry) => (
+            <RepoRow
+              key={entry.repo}
+              entry={entry}
+              busy={busyRepo === entry.repo}
+              onToggle={(tracked) => onToggle(entry.repo, tracked)}
+            />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function RepoPickerSettings() {
+  const rpc = useRpc<typeof githubRpcContract>();
+  const settings = useSettings();
+  const [owners, setOwners] = useState<OwnerEntry[] | null>(null);
+  const [invalidExtraRepos, setInvalidExtraRepos] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+  const [busyRepo, setBusyRepo] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(
+    (refresh: boolean) => {
+      setError(null);
+      return rpc.call("listOwners", { refresh }).then(
+        (result) => {
+          const payload = result as {
+            owners?: OwnerEntry[];
+            invalidExtraRepos?: string[];
+          };
+          setOwners(payload.owners ?? []);
+          setInvalidExtraRepos(payload.invalidExtraRepos ?? []);
+        },
+        (cause: unknown) => {
+          setOwners([]);
+          setError(errorText(cause));
+        },
+      );
+    },
+    [rpc],
+  );
+
+  useEffect(() => {
+    void load(false);
+  }, [load]);
+
+  const toggle = useCallback(
+    (repo: string, tracked: boolean) => {
+      setBusyRepo(repo);
+      // Optimistic: the checkbox should not lag a round-trip behind the click.
+      setOwners((current) =>
+        current === null
+          ? current
+          : current.map((owner) => ({
+              ...owner,
+              repos: owner.repos.map((entry) =>
+                entry.repo === repo
+                  ? {
+                      ...entry,
+                      tracking: tracked
+                        ? ("selected" as const)
+                        : ("off" as const),
+                    }
+                  : entry,
+              ),
+            })),
+      );
+      rpc.call("setRepoTracked", { repo, tracked }).then(
+        () => setBusyRepo(null),
+        (cause: unknown) => {
+          setBusyRepo(null);
+          toast.error(errorText(cause));
+          void load(false);
+        },
+      );
+    },
+    [rpc, load],
+  );
+
+  const selectedWithoutProject = useMemo(
+    () =>
+      (owners ?? []).some((owner) =>
+        owner.repos.some(
+          (entry) =>
+            entry.tracking === "selected" || entry.tracking === "extra",
+        ),
+      ),
+    [owners],
+  );
+  const defaultProjectUnset =
+    settings.values !== undefined &&
+    String(settings.values.defaultProject ?? "").length === 0;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Input
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Filter repositories…"
+          className="h-8"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 shrink-0"
+          disabled={refreshing}
+          onClick={() => {
+            setRefreshing(true);
+            void load(true).finally(() => setRefreshing(false));
+          }}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+
+      {invalidExtraRepos.length > 0 ? (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          The extraRepos setting contains{" "}
+          {invalidExtraRepos.map((entry) => `"${entry}"`).join(", ")}, which{" "}
+          {invalidExtraRepos.length === 1 ? "is" : "are"} not an owner/repo name
+          and {invalidExtraRepos.length === 1 ? "tracks" : "track"} nothing.
+          Wildcards are not supported. Check the repositories you want here
+          instead.
+        </p>
+      ) : null}
+
+      {defaultProjectUnset && selectedWithoutProject ? (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Set a default BB project below. Repos without their own BB project
+          need it before Send agent can spawn a thread.
+        </p>
+      ) : null}
+
+      {error !== null ? (
+        <EmptyState message={error} />
+      ) : owners === null ? (
+        <DelayedLoading>
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+          </div>
+        </DelayedLoading>
+      ) : owners.length === 0 ? (
+        <EmptyState message="No repositories visible to the signed-in GitHub CLI account." />
+      ) : (
+        <div className="flex flex-col">
+          {owners.map((owner) => (
+            <OwnerGroup
+              key={owner.owner}
+              owner={owner}
+              filter={filter}
+              busyRepo={busyRepo}
+              onToggle={toggle}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default definePluginApp((app) => {
+  app.slots.settingsSection({
+    id: "repositories",
+    title: "Repositories",
+    description:
+      "Pick the repos whose issues and pull requests show up in the GitHub panel.",
+    component: RepoPickerSettings,
+  });
   app.slots.navPanel({
     id: "github",
     title: "GitHub",

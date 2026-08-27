@@ -162,6 +162,29 @@ beforeEach(() => {
     ],
   ]);
 
+  const viewerRepos = JSON.stringify([
+    {
+      nameWithOwner: "octocat/personal-site",
+      pushedAt: "2026-08-01T00:00:00Z",
+      isPrivate: true,
+      isFork: false,
+    },
+  ]);
+  const acmeRepos = JSON.stringify([
+    {
+      nameWithOwner: "acme/widgets",
+      pushedAt: "2026-08-19T00:00:00Z",
+      isPrivate: false,
+      isFork: false,
+    },
+    {
+      nameWithOwner: "acme/gadgets",
+      pushedAt: "2026-08-20T00:00:00Z",
+      isPrivate: false,
+      isFork: true,
+    },
+  ]);
+
   writeFileSync(
     join(binDir, "gh"),
     `#!/usr/bin/env bash
@@ -170,6 +193,11 @@ case "$*" in
   "--version") echo "gh version 2.96.0 (fake)";;
   "auth status --hostname github.com --active") echo "authenticated";;
   "api user") printf '%s\n' '{"login":"octocat"}';;
+  "api user/orgs --paginate") printf '%s\n' '[{"login":"acme"}]';;
+  "repo list octocat "*) printf '%s\n' '${viewerRepos}';;
+  "repo list acme "*) printf '%s\n' '${acmeRepos}';;
+  "issue list -R acme/gadgets"*) printf '%s\n' '[]';;
+  "pr list -R acme/gadgets"*) printf '%s\n' '[]';;
   "api repos/acme/widgets/assignees?per_page=100") printf '%s\n' '[{"login":"zoe"},{"login":"alice"},{"login":""}]';;
   "api repos/acme/widgets/labels?per_page=100") printf '%s\n' '[{"name":"triage"},{"name":" bug "},{"name":""}]';;
   "issue list -R acme/widgets --state open"*) printf '%s\n' '${openIssue}';;
@@ -347,5 +375,83 @@ describe("github plugin RPC behavior", () => {
         ],
       },
     });
+  });
+  it("warns about an extraRepos entry that cannot track anything", async () => {
+    const host = createFakePluginHost({
+      pluginId: "github",
+      settings: { extraRepos: "acme/widgets, ACME/*" },
+    });
+    await plugin(host.bb);
+
+    // The valid sibling still syncs; the glob contributes no repo.
+    await expect(host.harness.callRpc("refresh")).resolves.toMatchObject({
+      repos: 1,
+    });
+    expect(
+      host.harness.logEntries.filter(
+        (entry) => entry.level === "warn" && entry.message.includes("ACME/*"),
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("tracks a repo picked in settings and locks the ones it cannot untrack", async () => {
+    const { harness } = await loadPlugin();
+
+    // Only acme/widgets is tracked to start, through the extraRepos setting.
+    await expect(harness.callRpc("refresh")).resolves.toMatchObject({ repos: 1 });
+
+    await expect(
+      harness.callRpc("listOwners", { refresh: false }),
+    ).resolves.toMatchObject({
+      owners: [
+        {
+          owner: "octocat",
+          kind: "user",
+          repos: [{ repo: "octocat/personal-site", tracking: "off", isPrivate: true }],
+        },
+        {
+          owner: "acme",
+          kind: "organization",
+          repos: [
+            // Most recently pushed first, not alphabetical.
+            { repo: "acme/gadgets", tracking: "off", isFork: true },
+            // Locked on: the picker cannot rewrite the extraRepos setting.
+            { repo: "acme/widgets", tracking: "extra" },
+          ],
+        },
+      ],
+      invalidExtraRepos: [],
+    });
+
+    await expect(
+      harness.callRpc("setRepoTracked", { repo: "acme/gadgets", tracked: true }),
+    ).resolves.toEqual({ ok: true, selected: ["acme/gadgets"] });
+
+    await expect(harness.callRpc("refresh")).resolves.toMatchObject({ repos: 2 });
+    await expect(
+      harness.callRpc("listOwners", { refresh: false }),
+    ).resolves.toMatchObject({
+      owners: [
+        {},
+        { repos: [{ repo: "acme/gadgets", tracking: "selected" }, {}] },
+      ],
+    });
+
+    await expect(
+      harness.callRpc("setRepoTracked", { repo: "acme/gadgets", tracked: false }),
+    ).resolves.toEqual({ ok: true, selected: [] });
+    await expect(harness.callRpc("refresh")).resolves.toMatchObject({ repos: 1 });
+  });
+
+  it("reports an unusable extraRepos entry to the picker", async () => {
+    const host = createFakePluginHost({
+      pluginId: "github",
+      settings: { extraRepos: "acme/widgets, ACME/*" },
+    });
+    await plugin(host.bb);
+
+    await expect(
+      host.harness.callRpc("listOwners", { refresh: false }),
+    ).resolves.toMatchObject({ invalidExtraRepos: ["ACME/*"] });
   });
 });

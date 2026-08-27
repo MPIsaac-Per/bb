@@ -6,6 +6,7 @@ import {
   fetchRepoItems,
   githubRpcContract,
   parsePaginatedGhApi,
+  parseExtraRepos,
   validateGithubCliArgs,
 } from "./server";
 
@@ -137,8 +138,38 @@ describe("GitHub RPC contract", () => {
       "Unexpected argument",
     );
     expect(validateGithubCliArgs(["repos", "--json"])).toContain(
+      "accepts only --available",
+    );
+    expect(validateGithubCliArgs(["repos", "--available"])).toBeNull();
+    expect(validateGithubCliArgs(["sync", "--json"])).toContain(
       "does not accept arguments",
     );
+    expect(validateGithubCliArgs(["track", "get-bb/bb"])).toBeNull();
+    expect(validateGithubCliArgs(["untrack", "get-bb/bb"])).toBeNull();
+    expect(validateGithubCliArgs(["track"])).toContain("needs an owner/repo");
+    // Whole-owner tracking is the picker's job, not a wildcard's.
+    expect(validateGithubCliArgs(["track", "get-bb/*"])).toContain(
+      "expected owner/repo",
+    );
+  });
+
+  it("separates trackable extraRepos entries from wildcards and typos", () => {
+    expect(parseExtraRepos("get-bb/bb, owner/other")).toEqual({
+      valid: ["get-bb/bb", "owner/other"],
+      invalid: [],
+    });
+    // A glob parsed to nothing at all, with no warning and no tracked repo.
+    expect(parseExtraRepos("get-bb/*")).toEqual({
+      valid: [],
+      invalid: ["get-bb/*"],
+    });
+    expect(parseExtraRepos("get-bb/bb, get-bb/*, nope")).toEqual({
+      valid: ["get-bb/bb"],
+      invalid: ["get-bb/*", "nope"],
+    });
+    // Blank and separator-only settings are empty, not invalid.
+    expect(parseExtraRepos("")).toEqual({ valid: [], invalid: [] });
+    expect(parseExtraRepos("  ,  ")).toEqual({ valid: [], invalid: [] });
   });
 
   it("infers parsed handler inputs and frontend results", () => {
