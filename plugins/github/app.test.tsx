@@ -1,12 +1,22 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 
 const app = await loadPluginApp(() => import("./app"));
 
+function openMenu(trigger: HTMLElement) {
+  trigger.dispatchEvent(
+    new MouseEvent("pointerdown", { bubbles: true, button: 0 }),
+  );
+}
+
 describe("GitHub app navigation", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it("opens issue details in the URL-backed page instead of a fixed tab", async () => {
     const panel = app.navPanels[0]!;
     expect(panel.fixedTabs).toBeUndefined();
@@ -222,6 +232,129 @@ describe("GitHub app navigation", () => {
     expect(
       slot.container.querySelector('[title="acme/widgets"]'),
     ).not.toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("sorts table columns and keeps multi-select filters synchronized with the query", async () => {
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "issues" },
+      {
+        rpc: {
+          listItems: () => ({
+            items: [
+              {
+                repo: "get-bb/bb",
+                number: 42,
+                kind: "issue",
+                title: "Zebra regression",
+                state: "OPEN",
+                author: "octocat",
+                labels: [],
+                assignees: ["octocat"],
+                url: "https://github.com/get-bb/bb/issues/42",
+                body: "",
+                updatedAt: "2026-08-20T00:00:00.000Z",
+              },
+              {
+                repo: "acme/widgets",
+                number: 7,
+                kind: "issue",
+                title: "Alpha bug",
+                state: "OPEN",
+                author: "alice",
+                labels: [],
+                assignees: ["alice"],
+                url: "https://github.com/acme/widgets/issues/7",
+                body: "",
+                updatedAt: "2026-08-22T00:00:00.000Z",
+              },
+              {
+                repo: "mpiv/control-plane",
+                number: 11,
+                kind: "issue",
+                title: "Closed incident",
+                state: "CLOSED",
+                author: "alice",
+                labels: [],
+                assignees: ["alice"],
+                url: "https://github.com/mpiv/control-plane/issues/11",
+                body: "",
+                updatedAt: "2026-08-21T00:00:00.000Z",
+              },
+            ],
+          }),
+          listLinks: () => ({ links: {} }),
+          status: () => ({
+            ghOk: true,
+            ghState: "ready",
+            ghError: null,
+            repos: [
+              { repo: "get-bb/bb", projectId: null },
+              { repo: "acme/widgets", projectId: null },
+              { repo: "mpiv/control-plane", projectId: null },
+            ],
+            lastSyncedAt: null,
+          }),
+          viewer: () => ({ login: "octocat" }),
+        },
+      },
+    );
+
+    await slot.findByText("Alpha bug");
+    expect(slot.getByRole("button", { name: "Repo filter" })).toBeDefined();
+    expect(slot.getByRole("button", { name: "Assignee filter" })).toBeDefined();
+    expect(
+      slot.getByRole("button", { name: "Status filter, 1 selected" }),
+    ).toBeDefined();
+
+    slot.getByRole("button", { name: "Sort by Title" }).click();
+    await slot.findByRole("button", { name: "Sort by Title, ascending" });
+    const titlesAscending = slot
+      .getAllByTestId("github-item-title")
+      .map((node) => node.textContent);
+    expect(titlesAscending).toEqual(["Alpha bug", "Zebra regression"]);
+    slot.getByRole("button", { name: "Sort by Title, ascending" }).click();
+    await slot.findByRole("button", { name: "Sort by Title, descending" });
+    const titlesDescending = slot
+      .getAllByTestId("github-item-title")
+      .map((node) => node.textContent);
+    expect(titlesDescending).toEqual(["Zebra regression", "Alpha bug"]);
+
+    openMenu(slot.getByRole("button", { name: "Repo filter" }));
+    (
+      await slot.findByRole("menuitemcheckbox", { name: "acme/widgets" })
+    ).click();
+    expect(
+      (slot.container.querySelector("input") as HTMLInputElement).value,
+    ).toBe("is:open repo:acme/widgets ");
+    expect(slot.queryByText("Zebra regression")).toBeNull();
+    expect(slot.getByText("Alpha bug")).toBeDefined();
+    slot.getByRole("menuitemcheckbox", { name: "get-bb/bb" }).click();
+    expect(
+      (slot.container.querySelector("input") as HTMLInputElement).value,
+    ).toBe("is:open repo:acme/widgets repo:get-bb/bb ");
+    expect(slot.getByText("Zebra regression")).toBeDefined();
+    const finalRepoOption = slot.getByRole("menuitemcheckbox", {
+      name: "mpiv/control-plane",
+    });
+    finalRepoOption.click();
+    expect(
+      (slot.container.querySelector("input") as HTMLInputElement).value,
+    ).toBe("is:open repo:acme/widgets repo:get-bb/bb repo:mpiv/control-plane ");
+    finalRepoOption.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
+    );
+    await slot.findByRole("button", { name: "Status filter, 1 selected" });
+
+    openMenu(slot.getByRole("button", { name: "Status filter, 1 selected" }));
+    (await slot.findByRole("menuitemcheckbox", { name: "Open" })).click();
+    expect(
+      (slot.container.querySelector("input") as HTMLInputElement).value,
+    ).toBe("repo:acme/widgets repo:get-bb/bb repo:mpiv/control-plane ");
+    slot.getByRole("menuitemcheckbox", { name: "Closed" }).click();
+    expect(await slot.findByText("Closed incident")).toBeDefined();
+
     slot.lifecycle.unmount();
   });
 });

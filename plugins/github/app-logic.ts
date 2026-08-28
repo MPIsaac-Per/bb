@@ -53,7 +53,10 @@ export function routeToSubPath(route: Route): string {
   }
 }
 
-interface ParsedQuery {
+// GitHub-style qualifiers parsed and matched client-side:
+// is:open, is:closed, is:merged, assignee:<login>, assignee:@me,
+// author:<login>, label:<name>, repo:<owner/name>, no:assignee, no:label.
+export interface ParsedQuery {
   states: string[];
   assignees: string[];
   authors: string[];
@@ -180,6 +183,76 @@ const QUALIFIER_KEYS: Array<{ key: string; hint: string }> = [
 
 function quoteValue(value: string): string {
   return /\s/.test(value) ? `"${value}"` : value;
+}
+
+export type QueryFilter = "repo" | "assignee" | "status";
+
+/** Replace one family of structured qualifiers while preserving all other
+    GitHub query syntax and free text. */
+export function setQueryFilterValues(
+  query: string,
+  filter: QueryFilter,
+  values: string[],
+): string {
+  const keys =
+    filter === "status" ? new Set(["is", "state"]) : new Set([filter]);
+  const remaining = tokenizeQuery(query).filter((token) => {
+    const separator = token.indexOf(":");
+    if (separator <= 0) return true;
+    return !keys.has(token.slice(0, separator).toLowerCase());
+  });
+  const qualifier = filter === "status" ? "is" : filter;
+  const additions = values.map((value) => `${qualifier}:${quoteValue(value)}`);
+  const next = [...remaining, ...additions];
+  return next.length === 0 ? "" : `${next.join(" ")} `;
+}
+
+export type TableSortKey =
+  | "id"
+  | "repo"
+  | "title"
+  | "assignee"
+  | "status"
+  | "updated";
+
+export interface TableSort {
+  key: TableSortKey;
+  direction: "asc" | "desc";
+}
+
+const textCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
+function compareItems(left: Item, right: Item, key: TableSortKey): number {
+  switch (key) {
+    case "id":
+      return left.number - right.number;
+    case "repo":
+      return textCollator.compare(left.repo, right.repo);
+    case "title":
+      return textCollator.compare(left.title, right.title);
+    case "assignee":
+      return textCollator.compare(
+        [...left.assignees].sort(textCollator.compare).join(","),
+        [...right.assignees].sort(textCollator.compare).join(","),
+      );
+    case "status":
+      return textCollator.compare(left.state, right.state);
+    case "updated":
+      return left.updatedAt.localeCompare(right.updatedAt);
+  }
+}
+
+export function sortItems(items: Item[], sort: TableSort): Item[] {
+  const direction = sort.direction === "asc" ? 1 : -1;
+  return [...items].sort((left, right) => {
+    const primary = compareItems(left, right, sort.key);
+    if (primary !== 0) return primary * direction;
+    const repo = textCollator.compare(left.repo, right.repo);
+    return repo !== 0 ? repo : left.number - right.number;
+  });
 }
 
 export function buildSuggestions(

@@ -17,10 +17,15 @@ import {
   parseQuery,
   parseSubPath,
   routeToSubPath,
+  setQueryFilterValues,
+  sortItems,
   type Item,
+  type QueryFilter,
   type Route,
   type Suggestion,
   type SuggestionIcon,
+  type TableSort,
+  type TableSortKey,
 } from "./app-logic.js";
 import type { githubRpcContract } from "./server.js";
 import { toast } from "sonner";
@@ -577,6 +582,166 @@ function FilterBar({
   );
 }
 
+interface FilterOption {
+  value: string;
+  label: string;
+  icon?: React.ReactNode;
+}
+
+function TableFilterMenu({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: FilterOption[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const selectedSet = new Set(selected.map((value) => value.toLowerCase()));
+  const count = selectedSet.size;
+  const accessibleLabel = `${label} filter${count === 0 ? "" : `, ${count} selected`}`;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant={count === 0 ? "outline" : "secondary"}
+          className="h-9 gap-1.5 px-2.5 font-normal"
+          aria-label={accessibleLabel}
+        >
+          {label}
+          {count > 0 ? (
+            <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-xs">
+              {count}
+            </Badge>
+          ) : null}
+          <ChevronDownIcon />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="max-h-72 min-w-52 overflow-y-auto"
+        mobileTitle={`${label} filter`}
+      >
+        <DropdownMenuLabel>{label}</DropdownMenuLabel>
+        {options.length === 0 ? (
+          <DropdownMenuItem disabled>No options</DropdownMenuItem>
+        ) : (
+          options.map((option) => {
+            const checked = selectedSet.has(option.value.toLowerCase());
+            return (
+              <DropdownMenuCheckboxItem
+                key={option.value}
+                checked={checked}
+                onCheckedChange={(next) => {
+                  onChange(
+                    next === true
+                      ? [...selected, option.value]
+                      : selected.filter(
+                          (value) => value.toLowerCase() !== option.value.toLowerCase(),
+                        ),
+                  );
+                }}
+                onSelect={(event) => event.preventDefault()}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {option.icon}
+                  <span className="truncate">{option.label}</span>
+                </span>
+              </DropdownMenuCheckboxItem>
+            );
+          })
+        )}
+        {count > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onChange([])}>Clear {label.toLowerCase()}</DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function FilterControls({
+  query,
+  onChange,
+  items,
+  repos,
+  kind,
+}: {
+  query: string;
+  onChange: (value: string) => void;
+  items: Item[] | null;
+  repos: RepoInfo[];
+  kind: "issue" | "pr";
+}) {
+  const parsed = useMemo(() => parseQuery(query), [query]);
+  const repoOptions = useMemo(() => {
+    const values = new Set(repos.map((entry) => entry.repo));
+    for (const item of items ?? []) values.add(item.repo);
+    for (const repo of parsed.repos) values.add(repo);
+    return [...values]
+      .sort((left, right) => left.localeCompare(right))
+      .map((value) => ({ value, label: value }));
+  }, [items, parsed.repos, repos]);
+  const assigneeOptions = useMemo(() => {
+    const values = new Set(parsed.assignees);
+    for (const item of items ?? []) {
+      for (const assignee of item.assignees) values.add(assignee);
+    }
+    return [...values]
+      .sort((left, right) => left.localeCompare(right))
+      .map((value) => ({ value, label: value }));
+  }, [items, parsed.assignees]);
+  const statusOptions = (kind === "pr" ? ["open", "closed", "merged"] : ["open", "closed"]).map(
+    (value) => ({
+      value,
+      label: value[0]!.toUpperCase() + value.slice(1),
+      icon: <StateDot kind={kind} state={value.toUpperCase()} />,
+    }),
+  );
+  const update = (filter: QueryFilter, values: string[]) => {
+    onChange(setQueryFilterValues(query, filter, values));
+  };
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="min-w-0 flex-1">
+        <FilterBar value={query} onChange={onChange} items={items} repos={repos} kind={kind} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <TableFilterMenu
+          label="Repo"
+          options={repoOptions}
+          selected={parsed.repos}
+          onChange={(values) => update("repo", values)}
+        />
+        <TableFilterMenu
+          label="Assignee"
+          options={assigneeOptions}
+          selected={parsed.assignees}
+          onChange={(values) => update("assignee", values)}
+        />
+        <TableFilterMenu
+          label="Status"
+          options={statusOptions}
+          selected={parsed.states.map((state) => state.toLowerCase())}
+          onChange={(values) => update("status", values)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The list: a column-headed table.
+// ---------------------------------------------------------------------------
+
+// Shared column widths so the header row lines up with item rows. The table
+// switches modes against its own width, not the browser viewport.
 const COL = {
   id: "shrink-0 @[48rem]:w-12",
   repo: "hidden shrink-0 truncate @[48rem]:block @[48rem]:w-24 @[60rem]:w-32",
@@ -751,7 +916,10 @@ function ItemRow({
       onClick={onOpen}
     >
       <span className="flex min-w-0 flex-col items-start gap-1.5 @[48rem]:order-2 @[48rem]:flex-1 @[48rem]:flex-row @[48rem]:items-center @[48rem]:gap-2">
-        <span className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal">
+        <span
+          className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal"
+          data-testid="github-item-title"
+        >
           {item.title}
         </span>
         <LabelChips
@@ -863,12 +1031,16 @@ function ItemsTable({
   items,
   error,
   hasFilter,
+  sort,
+  onSort,
   onOpenItem,
 }: {
   kind: "issue" | "pr";
   items: Item[] | null;
   error: string | null;
   hasFilter: boolean;
+  sort: TableSort;
+  onSort: (key: TableSortKey) => void;
   onOpenItem: (repo: string, number: number) => void;
 }) {
   const links = useLinks();
@@ -906,18 +1078,67 @@ function ItemsTable({
   return (
     <div className="@container overflow-hidden rounded-lg border border-border bg-card">
       <div className="hidden items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:flex">
-        <span className={COL.id}>ID</span>
-        <span className={COL.repo}>Repo</span>
-        <span className="min-w-0 flex-1">Title</span>
-        <span className={COL.assignee}>Assignee</span>
-        <span className={COL.status}>Status</span>
-        <span className={COL.updated}>Updated</span>
+        <SortHeader label="ID" sortKey="id" className={COL.id} sort={sort} onSort={onSort} />
+        <SortHeader label="Repo" sortKey="repo" className={COL.repo} sort={sort} onSort={onSort} />
+        <SortHeader label="Title" sortKey="title" className="min-w-0 flex-1" sort={sort} onSort={onSort} />
+        <SortHeader label="Assignee" sortKey="assignee" className={COL.assignee} sort={sort} onSort={onSort} />
+        <SortHeader label="Status" sortKey="status" className={COL.status} sort={sort} onSort={onSort} />
+        <SortHeader label="Updated" sortKey="updated" className={COL.updated} sort={sort} onSort={onSort} align="right" />
         <span className={COL.actions} />
       </div>
       {body}
     </div>
   );
 }
+
+function SortHeader({
+  label,
+  sortKey,
+  className,
+  sort,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  sortKey: TableSortKey;
+  className: string;
+  sort: TableSort;
+  onSort: (key: TableSortKey) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort.key === sortKey;
+  const direction = active ? sort.direction : null;
+  const accessibleLabel = `Sort by ${label}${direction === null ? "" : `, ${direction === "asc" ? "ascending" : "descending"}`}`;
+  return (
+    <span
+      role="columnheader"
+      className={className}
+      aria-sort={
+        direction === null
+          ? "none"
+          : direction === "asc"
+            ? "ascending"
+            : "descending"
+      }
+    >
+      <button
+        type="button"
+        className={`flex w-full items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${align === "right" ? "justify-end" : "justify-start"}`}
+        onClick={() => onSort(sortKey)}
+        aria-label={accessibleLabel}
+      >
+        {label}
+        <span aria-hidden="true" className={active ? "text-foreground" : "opacity-40"}>
+          {direction === "asc" ? "↑" : direction === "desc" ? "↓" : "↕"}
+        </span>
+      </button>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Issue detail: body + comments on the left, metadata sidebar on the right.
+// ---------------------------------------------------------------------------
 
 function SidebarHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -2178,7 +2399,37 @@ function PanelHeader() {
 }
 
 const QUERY_KEY = "bb-plugin-github:query";
+const SORT_KEY = "bb-plugin-github:sort:v1";
 const DEFAULT_QUERY = "is:open ";
+const DEFAULT_SORT: TableSort = { key: "updated", direction: "desc" };
+const TABLE_SORT_KEYS: TableSortKey[] = [
+  "id",
+  "repo",
+  "title",
+  "assignee",
+  "status",
+  "updated",
+];
+
+function storedTableSort(): TableSort {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(SORT_KEY) ?? "null") as {
+      key?: unknown;
+      direction?: unknown;
+    } | null;
+    if (
+      stored !== null &&
+      typeof stored.key === "string" &&
+      TABLE_SORT_KEYS.includes(stored.key as TableSortKey) &&
+      (stored.direction === "asc" || stored.direction === "desc")
+    ) {
+      return { key: stored.key as TableSortKey, direction: stored.direction };
+    }
+  } catch {
+    // Ignore malformed or unavailable local storage.
+  }
+  return DEFAULT_SORT;
+}
 
 function GithubPanel({ subPath }: PluginNavPanelProps) {
   const [route, navigate] = useSubPathRoute(subPath);
@@ -2196,6 +2447,21 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
       window.localStorage.setItem(QUERY_KEY, next);
     } catch {}
   }, []);
+  const [sort, setSort] = useState<TableSort>(storedTableSort);
+  const setSortKey = useCallback((key: TableSortKey) => {
+    setSort((current) => {
+      const next: TableSort = {
+        key,
+        direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+      };
+      try {
+        window.localStorage.setItem(SORT_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore unavailable local storage.
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
@@ -2206,6 +2472,8 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
           status={status}
           query={query}
           setQuery={setQuery}
+          sort={sort}
+          setSortKey={setSortKey}
         />
       </div>
     </div>
@@ -2217,38 +2485,41 @@ function ListView({
   query,
   setQuery,
   repos,
+  sort,
+  setSortKey,
   onOpenItem,
 }: {
   kind: "issue" | "pr";
   query: string;
   setQuery: (query: string) => void;
   repos: RepoInfo[];
+  sort: TableSort;
+  setSortKey: (key: TableSortKey) => void;
   onOpenItem: (repo: string, number: number) => void;
 }) {
   const { items, error } = useItems(kind);
   const viewer = useViewer();
   const parsed = useMemo(() => parseQuery(query), [query]);
-  const filtered = useMemo(
+  const visible = useMemo(
     () =>
       items === null
         ? null
-        : items.filter((item) => matchesQuery(item, parsed, viewer)),
-    [items, parsed, viewer],
+        : sortItems(
+            items.filter((item) => matchesQuery(item, parsed, viewer)),
+            sort,
+          ),
+    [items, parsed, sort, viewer],
   );
   return (
     <>
-      <FilterBar
-        value={query}
-        onChange={setQuery}
-        items={items}
-        repos={repos}
-        kind={kind}
-      />
+      <FilterControls query={query} onChange={setQuery} items={items} repos={repos} kind={kind} />
       <ItemsTable
         kind={kind}
-        items={filtered}
+        items={visible}
         error={error}
         hasFilter={query.trim().length > 0}
+        sort={sort}
+        onSort={setSortKey}
         onOpenItem={onOpenItem}
       />
     </>
@@ -2261,12 +2532,16 @@ function GithubPanelBody({
   status,
   query,
   setQuery,
+  sort,
+  setSortKey,
 }: {
   route: Route;
   navigate: (route: Route) => void;
   status: Status | null;
   query: string;
   setQuery: (query: string) => void;
+  sort: TableSort;
+  setSortKey: (key: TableSortKey) => void;
 }) {
   const openItem = useCallback(
     (itemKind: "issue" | "pr", repo: string, number: number) => {
@@ -2362,6 +2637,8 @@ function GithubPanelBody({
         query={query}
         setQuery={setQuery}
         repos={status?.repos ?? []}
+        sort={sort}
+        setSortKey={setSortKey}
         onOpenItem={(repo, number) =>
           openItem(kind === "pr" ? "pr" : "issue", repo, number)
         }
