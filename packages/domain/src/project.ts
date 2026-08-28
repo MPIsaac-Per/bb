@@ -6,12 +6,24 @@ const projectKindValues = ["standard", "personal"] as const;
 const projectKindSchema = z.enum(projectKindValues);
 export type ProjectKind = z.infer<typeof projectKindSchema>;
 
+export const projectSidebarThreadRowLimitValues = [5, 10, 20, 50] as const;
+export const projectSidebarThreadRowLimitSchema = z.union([
+  z.literal(5),
+  z.literal(10),
+  z.literal(20),
+  z.literal(50),
+]);
+export type ProjectSidebarThreadRowLimit = z.infer<
+  typeof projectSidebarThreadRowLimitSchema
+>;
+
 export const projectSchema = z.object({
   id: z.string(),
   kind: projectKindSchema,
   name: z.string(),
   gitRemoteUrl: z.string().nullable(),
   archivedAt: z.number().nullable(),
+  sidebarThreadRowLimit: projectSidebarThreadRowLimitSchema.nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });

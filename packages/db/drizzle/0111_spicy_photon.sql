@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `sidebar_thread_row_limit` integer;

@@ -7,7 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import type { ThreadListEntry } from "@bb/domain";
+import type { ProjectSidebarThreadRowLimit, ThreadListEntry } from "@bb/domain";
 import type { ProjectResponse } from "@bb/server-contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -20,6 +20,8 @@ import {
   type ProjectThreadListState,
 } from "./ProjectRow";
 import { buildSidebarEntitySectionId } from "@bb/client-core";
+
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
 const mockUpdateEnvironment = vi.hoisted(() => ({
   mutate: vi.fn(),
@@ -85,6 +87,7 @@ function makeProject(): ProjectResponse {
     name: "Test project",
     gitRemoteUrl: null,
     archivedAt: null,
+    sidebarThreadRowLimit: null,
     sources: [],
     createdAt: 0,
     updatedAt: 0,
@@ -137,14 +140,20 @@ function renderProjectRow(
   isActive = false,
   collapsedEnvironmentIds: Set<string> = new Set(),
   isCollapsed = false,
+  selectedThreadId?: string,
+  threadRowLimit?: ProjectSidebarThreadRowLimit,
 ) {
   const onToggleEnvironmentCollapsed = vi.fn();
   const result = render(
     <TooltipProvider>
       <MemoryRouter>
         <ProjectRow
-          project={makeProject()}
+          project={{
+            ...makeProject(),
+            sidebarThreadRowLimit: threadRowLimit ?? null,
+          }}
           threadListState={threadListState}
+          selectedThreadId={selectedThreadId}
           isActive={isActive}
           isCollapsed={isCollapsed}
           compareThreads={() => 0}
@@ -158,7 +167,11 @@ function renderProjectRow(
       </MemoryRouter>
     </TooltipProvider>,
   );
-  return { ...result, onToggleEnvironmentCollapsed, onToggleProjectCollapsed };
+  return {
+    ...result,
+    onToggleEnvironmentCollapsed,
+    onToggleProjectCollapsed,
+  };
 }
 
 function expectCollapsedActivityAtSidebarEdge(label: string) {
@@ -175,8 +188,79 @@ function expectCollapsedActivityAtSidebarEdge(label: string) {
 describe("ProjectRow interactions", () => {
   afterEach(() => {
     cleanup();
+    if (originalScrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
+      });
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
     mockDraftThreadIds.current = new Set();
     vi.clearAllMocks();
+  });
+
+  it("bounds a configured project and keeps native wheel scrolling available", () => {
+    const threads = Array.from({ length: 12 }, (_, index) =>
+      makeThread({
+        id: `thr_${index}`,
+        title: `Thread ${index}`,
+        titleFallback: `Thread ${index}`,
+        createdAt: index,
+      }),
+    );
+    const result = renderProjectRow(
+      vi.fn(),
+      { status: "ready", threads },
+      false,
+      new Set(),
+      false,
+      undefined,
+      5,
+    );
+
+    const viewport = result.container.querySelector(
+      "[data-sidebar-project-thread-scroll]",
+    );
+    expect(viewport).toBeInstanceOf(HTMLElement);
+    expect((viewport as HTMLElement).style.maxHeight).toContain("* 5");
+    expect(viewport?.classList.contains("overflow-y-auto")).toBe(true);
+
+    const wheel = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+    viewport?.dispatchEvent(wheel);
+    expect(wheel.defaultPrevented).toBe(false);
+  });
+
+  it("scrolls a selected thread outside the initial project window into view", () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const threads = Array.from({ length: 12 }, (_, index) =>
+      makeThread({
+        id: `thr_${index}`,
+        title: `Thread ${index}`,
+        titleFallback: `Thread ${index}`,
+        createdAt: index,
+      }),
+    );
+
+    renderProjectRow(
+      vi.fn(),
+      { status: "ready", threads },
+      false,
+      new Set(),
+      false,
+      "thr_11",
+      5,
+    );
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
   });
 
   it("places the project disclosure after its label and keeps root threads flush", () => {
@@ -207,6 +291,9 @@ describe("ProjectRow interactions", () => {
       "proj_test",
     );
     expect(projectGroup?.hasAttribute("data-sidebar-section-id")).toBe(false);
+    expect(
+      result.container.querySelector("[data-sidebar-project-thread-scroll]"),
+    ).toBeNull();
   });
 
   it("shows generic runtime activity before a named workflow rollup", () => {

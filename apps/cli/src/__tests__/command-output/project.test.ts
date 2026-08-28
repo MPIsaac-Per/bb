@@ -232,6 +232,51 @@ describe("bb project command output", () => {
     ).toEqual(projects);
   });
 
+  it("bb project update sets and clears the sidebar thread-row limit", async () => {
+    const patch = vi.fn(
+      async ({ json }: { json: Record<string, unknown> }) => ({
+        id: "proj-1",
+        name: "Alpha",
+        sidebarThreadRowLimit: json.sidebarThreadRowLimit,
+        sources: [],
+        createdAt: 1,
+        updatedAt: 2,
+      }),
+    );
+    stubServerApi({ "v1.projects.:id.$patch": patch });
+
+    await runCommand(
+      ["project", "update", "proj-1", "--thread-row-limit", "10", "--json"],
+      register,
+    );
+    await runCommand(
+      [
+        "project",
+        "update",
+        "proj-1",
+        "--thread-row-limit",
+        "unlimited",
+        "--json",
+      ],
+      register,
+    );
+
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        json: { sidebarThreadRowLimit: 10 },
+        param: { id: "proj-1" },
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        json: { sidebarThreadRowLimit: null },
+        param: { id: "proj-1" },
+      }),
+    );
+  });
+
   it("bb project list renders the shared borderless table", async () => {
     const projects = [
       {

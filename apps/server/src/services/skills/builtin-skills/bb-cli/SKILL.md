@@ -288,6 +288,8 @@ status|install` to inspect or install provider CLIs on a selected machine.
   pass `--archived` to list archived projects.
 - Use `bb project archive <project-id>` to archive a project and its threads, or
   `bb project restore <project-id>` to return them to the active lists.
+- Set a project's bounded sidebar thread viewport with `bb project update
+<project-id> --thread-row-limit 5|10|20|50|unlimited`.
 - Use `bb project source add <project-id> --machine <id-or-name> --path <path>`
   to register a path on another connected machine. It uses the same selector
   resolution and fallback as project create. Use `--clone` instead of `--path`

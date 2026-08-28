@@ -2,6 +2,7 @@ import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import {
   ensurePersonalProject,
+  getProject,
   getThread,
   listPublicProjects,
   setExperiments,
@@ -27,6 +28,9 @@ const projectResponseSchema = z.object({
   id: z.string(),
   gitRemoteUrl: z.string().nullable(),
   archivedAt: z.number().nullable(),
+  sidebarThreadRowLimit: z
+    .union([z.literal(5), z.literal(10), z.literal(20), z.literal(50)])
+    .nullable(),
   sources: z.array(
     z.object({
       id: z.string(),
@@ -93,6 +97,64 @@ describe("public project local host routes", () => {
       expect(await readJson(restoredProjectsResponse)).toEqual([
         expect.objectContaining({ id: project.id }),
       ]);
+    });
+  });
+
+  it("persists an independent sidebar thread-row limit for a project", async () => {
+    await withTestHarness(async (harness) => {
+      const host = seedHost(harness.deps, { id: "host-project-row-limit" });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        name: "Bounded sidebar",
+      });
+      const { project: otherProject } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        name: "Unlimited sidebar",
+      });
+
+      const invalidResponse = await harness.app.request(
+        `/api/v1/projects/${project.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sidebarThreadRowLimit: 7 }),
+        },
+      );
+      expect(invalidResponse.status).toBe(400);
+
+      const updateResponse = await harness.app.request(
+        `/api/v1/projects/${project.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sidebarThreadRowLimit: 10 }),
+        },
+      );
+
+      expect(updateResponse.status).toBe(200);
+      expect(await readJson(updateResponse)).toEqual(
+        expect.objectContaining({
+          id: project.id,
+          sidebarThreadRowLimit: 10,
+        }),
+      );
+
+      const projectsResponse = await harness.app.request("/api/v1/projects");
+      expect(await readJson(projectsResponse)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: project.id,
+            sidebarThreadRowLimit: 10,
+          }),
+          expect.objectContaining({
+            id: otherProject.id,
+            sidebarThreadRowLimit: null,
+          }),
+        ]),
+      );
+      expect(
+        getProject(harness.db, otherProject.id)?.sidebarThreadRowLimit,
+      ).toBeNull();
     });
   });
 

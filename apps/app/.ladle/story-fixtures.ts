@@ -405,6 +405,7 @@ export function makeProject(
     name: PROJECT_NAMES.bb,
     gitRemoteUrl: null,
     archivedAt: null,
+    sidebarThreadRowLimit: null,
     sources: [],
     createdAt: 1,
     updatedAt: 2,

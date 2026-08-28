@@ -9,6 +9,7 @@ const sidebarMocks = vi.hoisted(() => ({
   // `null` hands the hook back to the real module, so a case that renders the
   // real `SidebarContent` reads the ref it actually provides.
   scrollElementRef: null as { current: HTMLDivElement | null } | null,
+  observerRoots: [] as Array<Element | Document | null>,
 }));
 
 vi.mock("@/components/ui/sidebar.js", async (importOriginal) => {
@@ -27,7 +28,10 @@ import {
   SIDEBAR_CONTENT_SELECTOR,
   SidebarContent,
 } from "@/components/ui/sidebar.js";
-import { SidebarWindowedItems } from "./SidebarWindowedItems";
+import {
+  SIDEBAR_WINDOWED_SCROLL_ROOT_ATTRIBUTE,
+  SidebarWindowedItems,
+} from "./SidebarWindowedItems";
 
 // The hand-built container below has to carry the attribute the component
 // walks up to. Parse it out of the exported selector instead of spelling it
@@ -84,9 +88,16 @@ beforeEach(() => {
   });
   sidebarMocks.scrollElementRef = { current: scrollElement };
 
+  sidebarMocks.observerRoots = [];
   vi.stubGlobal(
     "IntersectionObserver",
     class {
+      constructor(
+        _callback: IntersectionObserverCallback,
+        options?: IntersectionObserverInit,
+      ) {
+        sidebarMocks.observerRoots.push(options?.root ?? null);
+      }
       observe() {}
       unobserve() {}
       disconnect() {}
@@ -194,6 +205,17 @@ describe("SidebarWindowedItems", () => {
     expect(
       document.querySelectorAll("[data-sidebar-windowed-nav]"),
     ).toHaveLength(3);
+  });
+
+  it("uses the nearest bounded project viewport as its windowing root", () => {
+    const container = mountSidebarContentContainer(200);
+    container.removeAttribute(SIDEBAR_CONTENT_ATTR);
+    container.setAttribute(SIDEBAR_WINDOWED_SCROLL_ROOT_ATTRIBUTE, "");
+
+    renderList(container);
+
+    expect(sidebarMocks.observerRoots).toContain(container);
+    expect(screen.queryByTestId("real-item-0")).toBeNull();
   });
 
   it("realizes every row when no scroll container can be found", () => {

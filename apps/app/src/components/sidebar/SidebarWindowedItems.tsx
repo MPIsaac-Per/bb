@@ -21,6 +21,9 @@ import {
 // Items within this distance of the scrollport stay mounted, so scrolling
 // promotes rows before they become visible.
 const WINDOW_VIEWPORT_MARGIN_PX = 240;
+export const SIDEBAR_WINDOWED_SCROLL_ROOT_ATTRIBUTE =
+  "data-sidebar-windowed-scroll-root";
+const SIDEBAR_WINDOWED_SCROLL_ROOT_SELECTOR = `[${SIDEBAR_WINDOWED_SCROLL_ROOT_ATTRIBUTE}]`;
 // Fallback placeholder row height until a real row height has been measured.
 const DEFAULT_ROW_HEIGHT_PX = 30;
 
@@ -136,11 +139,19 @@ export function SidebarWindowedItems({
   // so their refs are already populated; walk up from one of them instead of
   // falling into promote-all and demoting every row a moment later.
   const resolveScrollElement = useCallback((): Element | null => {
+    const firstWrapper = wrapperByKeyRef.current.values().next();
+    if (!firstWrapper.done) {
+      const nestedScrollRoot = firstWrapper.value.closest(
+        SIDEBAR_WINDOWED_SCROLL_ROOT_SELECTOR,
+      );
+      if (nestedScrollRoot) {
+        return nestedScrollRoot;
+      }
+    }
     const fromRef = scrollElementRef?.current ?? null;
     if (fromRef) {
       return fromRef;
     }
-    const firstWrapper = wrapperByKeyRef.current.values().next();
     return firstWrapper.done
       ? null
       : firstWrapper.value.closest(SIDEBAR_CONTENT_SELECTOR);

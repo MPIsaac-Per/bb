@@ -6,6 +6,7 @@ import {
   normalizeProjectPathInput,
   projectExecutionDefaultsSchema,
   projectSchema,
+  projectSidebarThreadRowLimitSchema,
   projectSourceCheckoutSchema,
   projectSourceSchema,
   promptHistoryEntrySchema,
@@ -259,9 +260,15 @@ export const updateProjectRequestSchema = z
   .object({
     name: z.string().min(1).optional(),
     archived: z.boolean().optional(),
+    sidebarThreadRowLimit: projectSidebarThreadRowLimitSchema
+      .nullable()
+      .optional(),
   })
   .refine(
-    (value) => value.name !== undefined || value.archived !== undefined,
+    (value) =>
+      value.name !== undefined ||
+      value.archived !== undefined ||
+      value.sidebarThreadRowLimit !== undefined,
     "At least one field must be provided",
   );
 export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;

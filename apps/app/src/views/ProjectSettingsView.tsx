@@ -6,12 +6,16 @@ import { useParams } from "react-router-dom";
 import "@bb/shared-ui/icon-extended";
 import {
   findLocalPathProjectSourceForHost,
+  projectSidebarThreadRowLimitValues,
   type Host,
   type LocalPathProjectSource,
+  type ProjectSidebarThreadRowLimit,
 } from "@bb/domain";
+import type { ProjectResponse } from "@bb/server-contract";
 import { Button } from "@bb/shared-ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -30,12 +34,14 @@ import { MachineStatusDot } from "@/components/machines/MachineStatusDot";
 import {
   SettingsRowList,
   SettingsSection,
+  SettingsWithControl,
 } from "@/components/ui/settings-section.js";
 import { ProjectSourceRow } from "@/views/project-settings/ProjectSourceRow";
 import {
   useAddLocalProjectSource,
   useDeleteLocalProjectSource,
   useUpdateLocalProjectSource,
+  useUpdateProject,
 } from "@/hooks/mutations/project-mutations";
 import {
   isHostPathMissing,
@@ -48,6 +54,64 @@ import {
 } from "@/hooks/useLocalPathPicker";
 import { stripProjectThreads } from "@/hooks/queries/project-queries";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
+
+interface ProjectSidebarThreadLimitSettingProps {
+  project: Pick<ProjectResponse, "id" | "sidebarThreadRowLimit">;
+}
+
+export function ProjectSidebarThreadLimitSetting({
+  project,
+}: ProjectSidebarThreadLimitSettingProps) {
+  const updateProject = useUpdateProject();
+  const selectedLimit = project.sidebarThreadRowLimit;
+  const selectedLabel =
+    selectedLimit === null ? "Unlimited" : `${selectedLimit} threads`;
+  const updateLimit = (limit: ProjectSidebarThreadRowLimit | null) => {
+    updateProject.mutate({
+      id: project.id,
+      sidebarThreadRowLimit: limit,
+    });
+  };
+
+  return (
+    <SettingsWithControl
+      label="Maximum visible threads"
+      description="Keep this project folder compact. Wheel, trackpad, or touch scrolling reveals the remaining threads."
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="min-w-32 justify-between"
+            aria-label="Maximum visible threads"
+          >
+            {selectedLabel}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuCheckboxItem
+            checked={selectedLimit === null}
+            disabled={updateProject.isPending}
+            onCheckedChange={() => updateLimit(null)}
+          >
+            Unlimited
+          </DropdownMenuCheckboxItem>
+          {projectSidebarThreadRowLimitValues.map((limit) => (
+            <DropdownMenuCheckboxItem
+              key={limit}
+              checked={selectedLimit === limit}
+              disabled={updateProject.isPending}
+              onCheckedChange={() => updateLimit(limit)}
+            >
+              {limit} threads
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </SettingsWithControl>
+  );
+}
 
 export function ProjectSettingsView() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -277,6 +341,12 @@ export function ProjectSettingsView() {
             </div>
           )}
         </SettingsSection>
+
+        {project ? (
+          <SettingsSection title="Sidebar">
+            <ProjectSidebarThreadLimitSetting project={project} />
+          </SettingsSection>
+        ) : null}
       </div>
 
       <ProjectPathDialog

@@ -91,6 +91,7 @@ export function project(
     name: `Project ${overrides.id}`,
     gitRemoteUrl: null,
     archivedAt: null,
+    sidebarThreadRowLimit: null,
     createdAt: 1,
     updatedAt: 1,
     sources: [],

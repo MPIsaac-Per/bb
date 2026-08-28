@@ -325,6 +325,7 @@ function makeProject(args: MakeProjectArgs): ProjectWithThreadsResponse {
     name: args.name,
     gitRemoteUrl: null,
     archivedAt: null,
+    sidebarThreadRowLimit: null,
     sources: [],
     threads: [...args.threads],
     defaultExecutionOptions: null,
