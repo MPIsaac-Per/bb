@@ -359,6 +359,7 @@ export function makeProject(
     kind: "standard",
     name: PROJECT_NAMES.bb,
     gitRemoteUrl: null,
+    sidebarThreadRowLimit: null,
     archivedAt: null,
     sources: [],
     createdAt: 1,

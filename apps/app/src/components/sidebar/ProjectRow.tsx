@@ -1,7 +1,9 @@
 import {
   memo,
   useCallback,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type MouseEventHandler,
@@ -2219,6 +2221,8 @@ function ProjectRowComponent({
 }: ProjectRowProps) {
   const [isDropdownActionsOpen, setIsDropdownActionsOpen] = useState(false);
   const [isContextActionsOpen, setIsContextActionsOpen] = useState(false);
+  const projectThreadRowLimit = project.sidebarThreadRowLimit;
+  const projectThreadScrollRef = useRef<HTMLDivElement>(null);
   const isActionsOpen =
     isDropdownActionsOpen || isContextActionsOpen || headerActionsOpen;
   const projectThreads = useMemo(
@@ -2241,6 +2245,28 @@ function ProjectRowComponent({
     }
     return getCollapsedChildActivity(projectThreads, draftThreadIds);
   }, [draftThreadIds, isCollapsed, projectThreads, threadListState.status]);
+  useLayoutEffect(() => {
+    if (
+      projectThreadRowLimit === null ||
+      isCollapsed ||
+      !selectedThreadId ||
+      threadListState.status !== "ready"
+    ) {
+      return;
+    }
+    const viewport = projectThreadScrollRef.current;
+    if (!viewport) return;
+    const selectedRow = Array.from(
+      viewport.querySelectorAll<HTMLElement>("[data-sidebar-thread-id]"),
+    ).find((row) => row.dataset.sidebarThreadId === selectedThreadId);
+    selectedRow?.scrollIntoView({ block: "nearest" });
+  }, [
+    isCollapsed,
+    projectThreadRowLimit,
+    selectedThreadId,
+    threadListState.status,
+  ]);
+
   const projectActions = (
     <>
       {headerActions ? (
@@ -2317,6 +2343,40 @@ function ProjectRowComponent({
     </>
   );
 
+  const projectThreadTree = (
+    <ProjectThreadTree
+      projectId={project.id}
+      threadListState={threadListState}
+      selectedThreadId={selectedThreadId}
+      collapsedThreadIds={collapsedThreadIds}
+      collapsedEnvironmentIds={collapsedEnvironmentIds}
+      compareThreads={compareThreads}
+      variant="section"
+      onProjectSelect={onProjectSelect}
+      onToggleThreadCollapsed={onToggleThreadCollapsed}
+      onToggleEnvironmentCollapsed={onToggleEnvironmentCollapsed}
+    />
+  );
+  const projectThreadContent =
+    projectThreadRowLimit === null ? (
+      projectThreadTree
+    ) : (
+      <div
+        ref={projectThreadScrollRef}
+        data-sidebar-project-thread-scroll=""
+        data-sidebar-windowed-scroll-root=""
+        data-row-limit={projectThreadRowLimit}
+        aria-label={`${project.name} threads`}
+        tabIndex={0}
+        className="overflow-y-auto"
+        style={{
+          maxHeight: `calc(var(--bb-sidebar-sticky-row-height) * ${projectThreadRowLimit})`,
+        }}
+      >
+        {projectThreadTree}
+      </div>
+    );
+
   return (
     <ProjectActionsContextMenu
       project={project}
@@ -2343,18 +2403,7 @@ function ProjectRowComponent({
           sectionRef={projectRowRef}
           sectionStyle={projectRowStyle}
         >
-          <ProjectThreadTree
-            projectId={project.id}
-            threadListState={threadListState}
-            selectedThreadId={selectedThreadId}
-            collapsedThreadIds={collapsedThreadIds}
-            collapsedEnvironmentIds={collapsedEnvironmentIds}
-            compareThreads={compareThreads}
-            variant="section"
-            onProjectSelect={onProjectSelect}
-            onToggleThreadCollapsed={onToggleThreadCollapsed}
-            onToggleEnvironmentCollapsed={onToggleEnvironmentCollapsed}
-          />
+          {projectThreadContent}
         </TopLevelSidebarSection>
       </div>
     </ProjectActionsContextMenu>

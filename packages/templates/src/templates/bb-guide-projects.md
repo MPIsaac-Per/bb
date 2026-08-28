@@ -28,6 +28,7 @@ A project maps to a code repository. All threads belong to a project.
   bb project show <id>                    Show project details
   bb project update <id>                  Update a project
     --name <name>                         New name
+    --thread-row-limit <rows>             Sidebar rows: 5, 10, 20, 50, or unlimited
 
   bb project archive <id>                 Archive project and its threads
   bb project restore <id>                 Restore an archived project and its threads

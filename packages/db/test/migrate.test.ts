@@ -294,6 +294,12 @@ function dropAppSettingsValuesTable(db: DbConnection): void {
   db.$client.prepare("DROP TABLE IF EXISTS app_settings_values").run();
 }
 
+function dropProjectSidebarThreadRowLimitColumn(db: DbConnection): void {
+  db.$client
+    .prepare("ALTER TABLE projects DROP COLUMN sidebar_thread_row_limit")
+    .run();
+}
+
 function dropProjectArchivedAtColumn(db: DbConnection): void {
   db.$client.prepare("ALTER TABLE projects DROP COLUMN archived_at").run();
 }
@@ -315,6 +321,7 @@ function dropRewindAddedTables(db: DbConnection): void {
   db.$client.prepare("DROP TABLE IF EXISTS plugin_kv").run();
   db.$client.prepare("DROP TABLE IF EXISTS plugin_settings").run();
   db.$client.prepare("DROP TABLE IF EXISTS plugin_schedules").run();
+  dropProjectSidebarThreadRowLimitColumn(db);
   dropProjectArchivedAtColumn(db);
   db.$client
     .prepare("ALTER TABLE hosts DROP COLUMN last_rejected_protocol_version")
@@ -1955,6 +1962,7 @@ describe("migrate", () => {
       dropEventParentToolCallIdColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
+      dropProjectSidebarThreadRowLimitColumn(db);
       dropProjectArchivedAtColumn(db);
       migrate(db);
 
@@ -2358,6 +2366,7 @@ describe("migrate", () => {
       dropPluginArtifactGitCheckoutRootColumn(db);
       dropMarketplaceCatalogSchema(db);
       dropEventParentToolCallIdColumn(db);
+      dropProjectSidebarThreadRowLimitColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
       dropProjectArchivedAtColumn(db);
@@ -2460,6 +2469,7 @@ describe("migrate", () => {
       dropPluginArtifactGitCheckoutRootColumn(db);
       dropMarketplaceCatalogSchema(db);
       dropEventParentToolCallIdColumn(db);
+      dropProjectSidebarThreadRowLimitColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
       dropProjectArchivedAtColumn(db);
@@ -5029,6 +5039,7 @@ describe("migrate", () => {
 
       dropEventParentToolCallIdColumn(db);
       dropMarketplaceStatsColumn(db);
+      dropProjectSidebarThreadRowLimitColumn(db);
       db.$client
         .prepare<DeleteMigrationParameters>(
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",

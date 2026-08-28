@@ -228,6 +228,9 @@ function projectUpdateJson(args: ProjectUpdateArgs): UpdateProjectRequest {
   return {
     ...(args.name === undefined ? {} : { name: args.name }),
     ...(args.archived === undefined ? {} : { archived: args.archived }),
+    ...(args.sidebarThreadRowLimit === undefined
+      ? {}
+      : { sidebarThreadRowLimit: args.sidebarThreadRowLimit }),
   };
 }
 

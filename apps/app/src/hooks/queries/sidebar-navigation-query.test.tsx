@@ -37,6 +37,7 @@ const PERSONAL_PROJECT: SidebarBootstrapResponse["personalProject"] = {
   kind: "personal",
   name: "Personal",
   gitRemoteUrl: null,
+  sidebarThreadRowLimit: null,
   archivedAt: null,
   createdAt: 1,
   updatedAt: 1,

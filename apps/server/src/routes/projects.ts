@@ -109,6 +109,7 @@ function toProjectResponseProjectFields(
     kind: project.kind,
     name: project.name,
     gitRemoteUrl: project.gitRemoteUrl,
+    sidebarThreadRowLimit: project.sidebarThreadRowLimit,
     archivedAt: project.archivedAt,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
@@ -455,9 +456,15 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
         })();
     }
 
-    if (payload.name !== undefined) {
+    if (
+      payload.name !== undefined ||
+      payload.sidebarThreadRowLimit !== undefined
+    ) {
       project = updateProject(deps.db, deps.hub, projectId, {
-        name: payload.name,
+        ...(payload.name === undefined ? {} : { name: payload.name }),
+        ...(payload.sidebarThreadRowLimit === undefined
+          ? {}
+          : { sidebarThreadRowLimit: payload.sidebarThreadRowLimit }),
       });
       if (!project) {
         throw new ApiError(404, "project_not_found", "Project not found");

@@ -37,6 +37,7 @@ function makeProject(): ProjectResponse {
     kind: "standard",
     name: "Test project",
     gitRemoteUrl: null,
+    sidebarThreadRowLimit: null,
     archivedAt: null,
     sources: [],
     createdAt: 0,

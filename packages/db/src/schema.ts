@@ -20,6 +20,7 @@ import type {
   PendingInteractionStatus,
   PermissionMode,
   PromptHistoryScope,
+  ProjectSidebarThreadRowLimit,
   ProjectSourceType,
   ReasoningLevel,
   ServiceTier,
@@ -113,6 +114,9 @@ export const projects = sqliteTable(
     name: text("name").notNull(),
     gitRemoteUrl: text("git_remote_url"),
     sortKey: text("sort_key").notNull().default("V"),
+    sidebarThreadRowLimit: integer(
+      "sidebar_thread_row_limit",
+    ).$type<ProjectSidebarThreadRowLimit>(),
     archivedAt: integer("archived_at"),
     deletedAt: integer("deleted_at"),
     createdAt: integer("created_at").notNull(),
