@@ -98,6 +98,7 @@ export interface ArchivedThreadsListFilters {
 }
 
 export const ARCHIVED_THREADS_LIST_KIND = "archivedList";
+export const ARCHIVED_PROJECTS_LIST_KIND = "archivedProjectsList";
 
 type HostsQueryKey = readonly [typeof HOSTS_QUERY_KEY];
 type HostQueryId = string | null | undefined;
@@ -114,6 +115,10 @@ type HostCloneDefaultPathQueryKey = readonly [
   string | null,
 ];
 type ProjectsQueryKey = readonly [typeof PROJECTS_QUERY_KEY];
+type ArchivedProjectsQueryKey = readonly [
+  typeof PROJECTS_QUERY_KEY,
+  typeof ARCHIVED_PROJECTS_LIST_KIND,
+];
 type AllProjectPathsQueryKeyPrefix = readonly [typeof PROJECT_PATHS_QUERY_KEY];
 type AllProjectSourceBranchesQueryKeyPrefix = readonly [
   typeof PROJECT_SOURCE_BRANCHES_QUERY_KEY,
@@ -514,6 +519,10 @@ export function hostCloneDefaultPathQueryKey(
 
 export function projectsQueryKey(): ProjectsQueryKey {
   return [PROJECTS_QUERY_KEY];
+}
+
+export function archivedProjectsQueryKey(): ArchivedProjectsQueryKey {
+  return [PROJECTS_QUERY_KEY, ARCHIVED_PROJECTS_LIST_KIND];
 }
 
 export function projectPathsQueryKey(

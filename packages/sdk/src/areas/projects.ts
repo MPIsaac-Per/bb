@@ -30,6 +30,8 @@ export interface ProjectListArgs {
   include?: ProjectListQuery["include"];
   /** Include the singleton personal project. Defaults to false for compatibility. */
   includePersonal?: boolean;
+  /** List archived standard projects instead of active projects. */
+  archived?: boolean;
   signal?: AbortSignal;
 }
 
@@ -238,7 +240,8 @@ export interface ProjectsArea {
 
 function projectUpdateJson(args: ProjectUpdateArgs): UpdateProjectRequest {
   return {
-    name: args.name,
+    ...(args.name === undefined ? {} : { name: args.name }),
+    ...(args.archived === undefined ? {} : { archived: args.archived }),
   };
 }
 
@@ -281,6 +284,9 @@ function projectListQuery(input: ProjectListArgs): ProjectListQuery {
     ...(input.includePersonal === undefined
       ? {}
       : { includePersonal: input.includePersonal ? "true" : "false" }),
+    ...(input.archived === undefined
+      ? {}
+      : { archived: input.archived ? "true" : "false" }),
   };
 }
 

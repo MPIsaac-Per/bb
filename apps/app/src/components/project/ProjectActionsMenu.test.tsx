@@ -18,6 +18,7 @@ const mockPathPickerHost = vi.hoisted(() => ({
 
 const mockProjectActions = vi.hoisted(() => ({
   requestRename: vi.fn(),
+  requestArchive: vi.fn(),
   requestDelete: vi.fn(),
   requestAddLocalPath: vi.fn(),
 }));
@@ -36,6 +37,7 @@ function makeProject(): ProjectResponse {
     kind: "standard",
     name: "Test project",
     gitRemoteUrl: null,
+    archivedAt: null,
     sources: [],
     createdAt: 0,
     updatedAt: 0,
@@ -47,6 +49,24 @@ describe("ProjectActionsMenu", () => {
     cleanup();
     vi.clearAllMocks();
     mockPathPickerHost.value = { hostId: null, hostName: null };
+  });
+
+  it("archives the project from the actions menu", async () => {
+    const project = makeProject();
+
+    render(
+      <MemoryRouter>
+        <ProjectActionsMenu project={project} />
+      </MemoryRouter>,
+    );
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Test project actions" }),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    expect(mockProjectActions.requestArchive).toHaveBeenCalledWith(project);
   });
 
   it("closes after selecting an action", async () => {

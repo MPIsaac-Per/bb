@@ -140,6 +140,8 @@ export const projectListQuerySchema = z.object({
     .optional(),
   /** Include the singleton personal project; omitted preserves ordinary-only listing. */
   includePersonal: z.enum(["true", "false"]).optional(),
+  /** List archived standard projects instead of active projects. */
+  archived: z.enum(["true", "false"]).optional(),
 });
 export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;
 
@@ -255,11 +257,11 @@ export type ProjectAttachmentUploadForm = Record<"file", Blob>;
 
 export const updateProjectRequestSchema = z
   .object({
-    name: z.string().min(1),
+    name: z.string().min(1).optional(),
+    archived: z.boolean().optional(),
   })
-  .partial()
   .refine(
-    (value) => value.name !== undefined,
+    (value) => value.name !== undefined || value.archived !== undefined,
     "At least one field must be provided",
   );
 export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;

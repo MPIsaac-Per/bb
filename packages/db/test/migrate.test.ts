@@ -292,6 +292,10 @@ function dropAppSettingsValuesTable(db: DbConnection): void {
   db.$client.prepare("DROP TABLE IF EXISTS app_settings_values").run();
 }
 
+function dropProjectArchivedAtColumn(db: DbConnection): void {
+  db.$client.prepare("ALTER TABLE projects DROP COLUMN archived_at").run();
+}
+
 function dropRewindAddedTables(db: DbConnection): void {
   // Several tests migrate to head, rewind the schema to a legacy state, then
   // re-apply forward. Tables added by recent migrations must be dropped as part
@@ -315,6 +319,7 @@ function dropRewindAddedTables(db: DbConnection): void {
   db.$client.prepare("DROP TABLE IF EXISTS plugin_kv").run();
   db.$client.prepare("DROP TABLE IF EXISTS plugin_settings").run();
   db.$client.prepare("DROP TABLE IF EXISTS plugin_schedules").run();
+  dropProjectArchivedAtColumn(db);
   db.$client
     .prepare("ALTER TABLE hosts DROP COLUMN last_rejected_protocol_version")
     .run();
@@ -2041,6 +2046,7 @@ describe("migrate", () => {
       dropEventParentToolCallIdColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
+      dropProjectArchivedAtColumn(db);
       migrate(db);
 
       expect(
@@ -2445,6 +2451,7 @@ describe("migrate", () => {
       dropEventParentToolCallIdColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
+      dropProjectArchivedAtColumn(db);
       expect(
         db.$client
           .prepare<[number], MigrationCountRow>(
@@ -2546,6 +2553,7 @@ describe("migrate", () => {
       dropEventParentToolCallIdColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
+      dropProjectArchivedAtColumn(db);
       expect(() => migrate(db)).not.toThrow();
 
       expect(readTableNames(db)).toContain("thread_sections");
@@ -5193,6 +5201,7 @@ describe("migrate", () => {
           );
       `);
 
+      dropProjectArchivedAtColumn(db);
       migrate(db);
 
       expect(

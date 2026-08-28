@@ -13,6 +13,7 @@ import { Icon, type IconName } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
 import { Pill } from "@bb/shared-ui/pill";
 import { ThreadUnarchiveButton } from "@/components/thread/ThreadUnarchiveButton";
+import { useUpdateProject } from "@/hooks/mutations/project-mutations";
 import { useUnarchiveThread } from "@/hooks/mutations/thread-state-mutations";
 import {
   hasThreadSearchableQuery,
@@ -20,6 +21,7 @@ import {
   useThreadSearch,
   type UseArchivedThreadsFilters,
 } from "@/hooks/queries/thread-queries";
+import { useArchivedProjects } from "@/hooks/queries/project-queries";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
 import type { ArchivedThreadsKindFilter } from "@/hooks/queries/query-keys";
 import { getThreadRoutePath } from "@/lib/route-paths";
@@ -103,6 +105,7 @@ export function ArchivedThreadsSettingsSection() {
   const [kind, setKind] = useState<ArchivedThreadsKindFilter>("all");
   const [projectId, setProjectId] = useState(ALL_PROJECTS);
   const sidebarNavigation = useSidebarNavigation();
+  const archivedProjectsQuery = useArchivedProjects();
   const searchIsActive = hasThreadSearchableQuery(search);
   const archivedThreadsQuery = useArchivedThreads(
     {
@@ -117,14 +120,35 @@ export function ArchivedThreadsSettingsSection() {
     query: search,
   });
   const unarchiveThread = useUnarchiveThread();
+  const updateProject = useUpdateProject();
 
   const projects = useMemo(() => {
     if (!sidebarNavigation.data) return [];
-    return [
+    const activeProjects = [
       sidebarNavigation.data.personalProject,
       ...sidebarNavigation.data.projects,
     ];
-  }, [sidebarNavigation.data]);
+    const archivedProjects = archivedProjectsQuery.data ?? [];
+    const existingProjectIds = new Set(
+      activeProjects.map((project) => project.id),
+    );
+    return [
+      ...activeProjects,
+      ...archivedProjects.filter(
+        (project) => !existingProjectIds.has(project.id),
+      ),
+    ];
+  }, [archivedProjectsQuery.data, sidebarNavigation.data]);
+  const archivedProjects = useMemo(() => {
+    const normalizedSearch = search.trim().toLocaleLowerCase();
+    return (archivedProjectsQuery.data ?? []).filter(
+      (project) =>
+        project.archivedAt !== null &&
+        (projectId === ALL_PROJECTS || project.id === projectId) &&
+        (normalizedSearch.length === 0 ||
+          project.name.toLocaleLowerCase().includes(normalizedSearch)),
+    );
+  }, [archivedProjectsQuery.data, projectId, search]);
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
     [projects],
@@ -180,10 +204,13 @@ export function ArchivedThreadsSettingsSection() {
   const selectedProjectLabel =
     projectOptions.find((option) => option.value === projectId)?.label ??
     "All projects";
-  const isInitialLoading = searchIsActive
-    ? threadSearch.isDebouncing ||
-      (threadSearch.isLoading && threadSearch.data === undefined)
-    : archivedThreadsQuery.isPending;
+  const isInitialLoading =
+    sidebarNavigation.isPending ||
+    archivedProjectsQuery.isPending ||
+    (searchIsActive
+      ? threadSearch.isDebouncing ||
+        (threadSearch.isLoading && threadSearch.data === undefined)
+      : archivedThreadsQuery.isPending);
 
   return (
     <section className="space-y-5">
@@ -230,14 +257,53 @@ export function ArchivedThreadsSettingsSection() {
         <p className="py-8 text-center text-sm text-muted-foreground">
           Loading archived threads…
         </p>
-      ) : archivedThreads.length === 0 ? (
+      ) : archivedThreads.length === 0 && archivedProjects.length === 0 ? (
         <EmptyStatePanel className="py-8">
           {search.trim().length > 0
             ? "No archived threads match your search."
-            : "No archived threads match these filters."}
+            : "No archived projects or threads match these filters."}
         </EmptyStatePanel>
       ) : (
         <div className="space-y-6">
+          {archivedProjects.length > 0 ? (
+            <section className="space-y-2">
+              <div className="flex items-center gap-2 px-0.5 text-xs font-medium text-muted-foreground">
+                <Icon name="Archive" className="size-3.5" />
+                <h3>Archived projects</h3>
+                <span className="ml-auto">{archivedProjects.length}</span>
+              </div>
+              <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+                {archivedProjects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="flex min-h-14 items-center gap-3 px-4 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">
+                        {project.name}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-subtle-foreground">
+                        Archived project
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={updateProject.isPending}
+                      onClick={() =>
+                        updateProject.mutate({
+                          id: project.id,
+                          archived: false,
+                        })
+                      }
+                    >
+                      Restore
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
           {groupedThreads.map(([groupProjectId, threads]) => (
             <section key={groupProjectId} className="space-y-2">
               <div className="flex items-center gap-2 px-0.5 text-xs font-medium text-muted-foreground">

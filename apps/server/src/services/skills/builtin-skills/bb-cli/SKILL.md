@@ -284,7 +284,10 @@ status|install` to inspect or install provider CLIs on a selected machine.
   `--host` as an alias. Omitting both selectors preserves the existing local
   CLI machine fallback (normally the primary machine).
 - `bb project list` preserves the ordinary-project-only default. Pass
-  `--include-personal` when the singleton personal project must be discoverable.
+  `--include-personal` when the singleton personal project must be discoverable;
+  pass `--archived` to list archived projects.
+- Use `bb project archive <project-id>` to archive a project and its threads, or
+  `bb project restore <project-id>` to return them to the active lists.
 - Use `bb project source add <project-id> --machine <id-or-name> --path <path>`
   to register a path on another connected machine. It uses the same selector
   resolution and fallback as project create. Use `--clone` instead of `--path`
