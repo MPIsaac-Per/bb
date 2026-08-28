@@ -10,7 +10,7 @@ import {
 
 /**
  * Palette + favicon picker options (mirror of the appearance part of
- * apps/app/src/views/SettingsView.tsx). Only the six built-in palettes map to
+ * apps/app/src/views/SettingsView.tsx). Only the eight built-in palettes map to
  * native tokens (plan: Limitations); custom and plugin themes can still be
  * selected — the choice is server-wide and the web/desktop honor it — but
  * the phone renders the default palette while one is active.

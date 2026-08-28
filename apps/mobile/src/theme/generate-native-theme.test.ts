@@ -82,6 +82,21 @@ describe("generate-native-theme", () => {
     );
   });
 
+  it("gives ChatGPT a visibly distinct dark shell", () => {
+    expect(nativeThemes.chatgpt.dark.canvas).toBe("#212121");
+    expect(nativeThemes.chatgpt.dark.sidebar).toBe("#171717");
+    expect(nativeThemes.chatgpt.dark.primary).toBe("#10a37f");
+  });
+
+  it("matches Cursor's shipped Anysphere shell anchors in both modes", () => {
+    expect(nativeThemes["anysphere-dark"].dark.canvas).toBe("#181818");
+    expect(nativeThemes["anysphere-dark"].dark.sidebar).toBe("#141414");
+    expect(nativeThemes["anysphere-dark"].dark.primary).toBe("#81a1c1");
+    expect(nativeThemes["anysphere-dark"].light.canvas).toBe("#fcfcfc");
+    expect(nativeThemes["anysphere-dark"].light.sidebar).toBe("#f3f3f3");
+    expect(nativeThemes["anysphere-dark"].light.primary).toBe("#2778c1");
+  });
+
   for (const id of BUILTIN_THEME_IDS) {
     for (const mode of MODES) {
       describe(`${id} ${mode}`, () => {

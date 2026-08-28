@@ -32,6 +32,27 @@ describe("code theme resolution", () => {
       light: "solarized-light",
       files: {},
     });
+    expect(resolveCodeTheme(null, "chatgpt")).toEqual({
+      dark: "github-dark-default",
+      light: "github-light-default",
+      files: {},
+    });
+    expect(resolveCodeTheme(null, "anysphere-dark")).toEqual({
+      dark: "bb:anysphere-dark:dark",
+      light: "bb:anysphere-dark:light",
+      files: {
+        "bb:anysphere-dark:dark": expect.objectContaining({
+          name: "bb:anysphere-dark:dark",
+          type: "dark",
+          colors: expect.objectContaining({ "editor.background": "#181818" }),
+        }),
+        "bb:anysphere-dark:light": expect.objectContaining({
+          name: "bb:anysphere-dark:light",
+          type: "light",
+          colors: expect.objectContaining({ "editor.background": "#FCFCFC" }),
+        }),
+      },
+    });
   });
 
   it("gives every built-in palette a distinct light code theme", () => {
@@ -40,7 +61,10 @@ describe("code theme resolution", () => {
       expect(resolved.light, id).not.toBe(resolved.dark);
       const shipped = resolved.files[resolved.light];
       if (shipped !== undefined) {
-        expect(shipped, id).toMatchObject({ name: resolved.light, type: "light" });
+        expect(shipped, id).toMatchObject({
+          name: resolved.light,
+          type: "light",
+        });
       }
     }
     const dracula = resolveCodeTheme(null, "dracula");

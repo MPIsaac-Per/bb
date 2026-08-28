@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  anysphereDarkCodeTheme,
+  anysphereLightCodeTheme,
+} from "./code-themes/anysphere.js";
 import { draculaLightCodeTheme } from "./code-themes/dracula-light.js";
 import { nordLightCodeTheme } from "./code-themes/nord-light.js";
 import { jsonObjectSchema, type JsonObject } from "./json-value.js";
@@ -72,6 +76,11 @@ export const builtInPaletteCodeThemes = {
   solarized: { dark: "solarized-dark", light: "solarized-light" },
   gruvbox: { dark: "gruvbox-dark-medium", light: "gruvbox-light-medium" },
   catppuccin: { dark: "catppuccin-mocha", light: "catppuccin-latte" },
+  chatgpt: { dark: "github-dark-default", light: "github-light-default" },
+  "anysphere-dark": {
+    dark: "bb:anysphere-dark:dark",
+    light: "bb:anysphere-dark:light",
+  },
 } as const satisfies Record<string, CodeThemePair>;
 
 export interface DeclaredCodeThemeSlot {
@@ -137,6 +146,10 @@ const builtInPaletteCodeThemeFiles: Partial<
 > = {
   nord: { "bb:nord:light": nordLightCodeTheme },
   dracula: { "bb:dracula:light": draculaLightCodeTheme },
+  "anysphere-dark": {
+    "bb:anysphere-dark:dark": anysphereDarkCodeTheme,
+    "bb:anysphere-dark:light": anysphereLightCodeTheme,
+  },
 };
 
 /**

@@ -736,7 +736,8 @@ list --environment "$BB_ENVIRONMENT_ID" --json`, then query only the chosen
   - `bb theme dir` — print the absolute custom-theme directory (where to create
     `<name>/theme.css`). Use this instead of guessing the path.
   - `bb theme set <id> [--favicon-color <color>]` — activate a built-in
-    (`default`, `nord`, `dracula`, `solarized`, `gruvbox`, `catppuccin`), custom,
+    (`default`, `nord`, `dracula`, `solarized`, `gruvbox`, `catppuccin`,
+    `chatgpt`, `anysphere-dark`), custom,
     or plugin-contributed theme. Without the flag it preserves the favicon
     color; with the flag it updates the complete appearance selection.
   - `bb theme show [--css]` — print the active palette; `--css` dumps the active
@@ -759,9 +760,10 @@ This is the BB habit: custom app-theme work belongs in
    id). To edit an existing theme, change its `theme.css` in place.
 3. Activate it: `bb theme set <name>`. Changes apply live to every open window.
 
-Code colors follow the active palette. Built-in palettes use the matching
-Shiki pair (Nord, Dracula, Solarized, Gruvbox, Catppuccin). To restyle diffs
-for a custom palette, put Pierre / VS Code theme JSON next to the stylesheet:
+Code colors follow the active palette. Built-in palettes use a matching bundled
+or first-party code-theme pair, including Anysphere Dark's Cursor-derived syntax
+colors. To restyle diffs for a custom palette, put Pierre / VS Code theme JSON
+next to the stylesheet:
 
 - `pierre-dark.json` and `pierre-light.json` in the same folder, or
 - `theme.json` with `{ "codeTheme": { "dark": "…", "light": "…" } }` — each

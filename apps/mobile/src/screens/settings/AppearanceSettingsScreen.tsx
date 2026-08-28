@@ -36,7 +36,7 @@ const MODES: { value: ThemeModePreference; label: string }[] = [
 ];
 
 const PALETTE_DESCRIPTION =
-  "Palettes change bb's colors on every client of this server. The six built-in palettes render natively here; a custom or plugin palette shows as the default palette on mobile.";
+  "Palettes change bb's colors on every client of this server. The eight built-in palettes render natively here; a custom or plugin palette shows as the default palette on mobile.";
 
 /**
  * `/settings/appearance`: light/dark mode (device-local, `bb.theme`), the

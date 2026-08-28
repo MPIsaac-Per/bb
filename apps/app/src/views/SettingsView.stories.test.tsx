@@ -88,6 +88,35 @@ describe("settings/Settings/Full Page story chrome", () => {
     ).toBe("page");
   });
 
+  it("offers the new built-in palettes in Appearance settings", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <TooltipProvider>
+          <FullPage />
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Appearance" }));
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Palette" }),
+      { button: 0 },
+    );
+
+    const chatGptOption = await screen.findByRole("menuitem", {
+      name: "ChatGPT",
+    });
+    expect(chatGptOption).toBeDefined();
+    const anysphereOption = await screen.findByRole("menuitem", {
+      name: "Anysphere Dark",
+    });
+    fireEvent.click(anysphereOption);
+
+    expect(
+      screen.getByRole("button", { name: "Palette" }).textContent,
+    ).toContain("Anysphere Dark");
+  });
+
   it("applies settingsPath once without resetting subsequent row navigation", async () => {
     window.history.replaceState(
       null,

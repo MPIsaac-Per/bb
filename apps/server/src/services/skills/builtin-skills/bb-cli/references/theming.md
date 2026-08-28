@@ -278,7 +278,8 @@ Pierre names for the active palette.
 Other commands:
 
 - `bb theme set <id> [--favicon-color <color>]` — switch to a built-in
-  (`default`, `nord`, `dracula`, `solarized`, `gruvbox`, `catppuccin`), custom,
+  (`default`, `nord`, `dracula`, `solarized`, `gruvbox`, `catppuccin`,
+  `chatgpt`, `anysphere-dark`), custom,
   or plugin-contributed theme. Omitting the flag preserves the favicon color.
 - `bb theme show --css` — dump the active theme's CSS; `bb theme list` shows the
   active palette and all discovered themes; `bb theme reset` returns to

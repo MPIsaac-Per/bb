@@ -42,13 +42,15 @@ describe("appearance model", () => {
         },
       ],
     });
-    expect(options.slice(0, 6).map((o) => o.id)).toEqual([
+    expect(options.slice(0, 8).map((o) => o.id)).toEqual([
       "default",
       "nord",
       "dracula",
       "solarized",
       "gruvbox",
       "catppuccin",
+      "chatgpt",
+      "anysphere-dark",
     ]);
     expect(options.find((o) => o.id === "nord")?.nativePalette).toBe("nord");
     const custom = options.find((o) => o.id === "ocean");

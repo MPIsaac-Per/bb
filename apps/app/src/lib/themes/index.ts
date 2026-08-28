@@ -1,5 +1,11 @@
-import { isBuiltInThemeId, type AppTheme, type BuiltInThemeId } from "@bb/domain";
+import {
+  isBuiltInThemeId,
+  type AppTheme,
+  type BuiltInThemeId,
+} from "@bb/domain";
+import { anysphereDarkThemeCss } from "./anysphere-dark";
 import { catppuccinThemeCss } from "./catppuccin";
+import { chatgptThemeCss } from "./chatgpt";
 import { draculaThemeCss } from "./dracula";
 import { gruvboxThemeCss } from "./gruvbox";
 import { nordThemeCss } from "./nord";
@@ -20,6 +26,8 @@ const builtInThemeCss: Record<BuiltInThemeId, string> = {
   solarized: solarizedThemeCss,
   gruvbox: gruvboxThemeCss,
   catppuccin: catppuccinThemeCss,
+  chatgpt: chatgptThemeCss,
+  "anysphere-dark": anysphereDarkThemeCss,
 };
 
 export function resolveAppThemeCss(appearance: AppTheme): string {

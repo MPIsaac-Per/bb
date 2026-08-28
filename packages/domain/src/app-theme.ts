@@ -22,6 +22,8 @@ const builtInThemeIdSchema = z.enum([
   "solarized",
   "gruvbox",
   "catppuccin",
+  "chatgpt",
+  "anysphere-dark",
 ]);
 export type BuiltInThemeId = z.infer<typeof builtInThemeIdSchema>;
 
@@ -54,6 +56,16 @@ export const builtInThemes: readonly BuiltInThemeMeta[] = [
     id: "catppuccin",
     name: "Catppuccin",
     description: "Soothing pastel — Latte light, Mocha dark",
+  },
+  {
+    id: "chatgpt",
+    name: "ChatGPT",
+    description: "Deep charcoal with OpenAI green accents",
+  },
+  {
+    id: "anysphere-dark",
+    name: "Anysphere Dark",
+    description: "Cursor's charcoal shell with arctic-blue accents",
   },
 ];
 
@@ -115,7 +127,9 @@ export const faviconColorPreferenceSchema = z.enum([
   "default",
   ...FAVICON_COLORS,
 ]);
-export type FaviconColorPreference = z.infer<typeof faviconColorPreferenceSchema>;
+export type FaviconColorPreference = z.infer<
+  typeof faviconColorPreferenceSchema
+>;
 
 export const defaultFaviconColor: FaviconColorPreference = "default";
 
