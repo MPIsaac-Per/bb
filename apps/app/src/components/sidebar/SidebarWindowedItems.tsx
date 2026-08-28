@@ -19,6 +19,9 @@ import {
 } from "./sidebarThreadShortcuts";
 
 const WINDOW_VIEWPORT_MARGIN_PX = 240;
+export const SIDEBAR_WINDOWED_SCROLL_ROOT_ATTRIBUTE =
+  "data-sidebar-windowed-scroll-root";
+const SIDEBAR_WINDOWED_SCROLL_ROOT_SELECTOR = `[${SIDEBAR_WINDOWED_SCROLL_ROOT_ATTRIBUTE}]`;
 const DEFAULT_ROW_HEIGHT_PX = 30;
 
 interface MeasuredItemHeight {
@@ -90,11 +93,19 @@ export function SidebarWindowedItems({
   }, []);
 
   const resolveScrollElement = useCallback((): Element | null => {
+    const firstWrapper = wrapperByKeyRef.current.values().next();
+    if (!firstWrapper.done) {
+      const nestedScrollRoot = firstWrapper.value.closest(
+        SIDEBAR_WINDOWED_SCROLL_ROOT_SELECTOR,
+      );
+      if (nestedScrollRoot) {
+        return nestedScrollRoot;
+      }
+    }
     const fromRef = scrollElementRef?.current ?? null;
     if (fromRef) {
       return fromRef;
     }
-    const firstWrapper = wrapperByKeyRef.current.values().next();
     return firstWrapper.done
       ? null
       : firstWrapper.value.closest(SIDEBAR_CONTENT_SELECTOR);

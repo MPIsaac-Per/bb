@@ -224,7 +224,10 @@ export interface ProjectsArea {
 
 function projectUpdateJson(args: ProjectUpdateArgs): UpdateProjectRequest {
   return {
-    name: args.name,
+    ...(args.name === undefined ? {} : { name: args.name }),
+    ...(args.sidebarThreadRowLimit === undefined
+      ? {}
+      : { sidebarThreadRowLimit: args.sidebarThreadRowLimit }),
   };
 }
 

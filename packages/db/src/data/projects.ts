@@ -1,5 +1,8 @@
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { PERSONAL_PROJECT_ID } from "@bb/domain";
+import {
+  PERSONAL_PROJECT_ID,
+  type ProjectSidebarThreadRowLimit,
+} from "@bb/domain";
 import type {
   DbConnection,
   DbQueryConnection,
@@ -232,15 +235,19 @@ export function getPersonalProject(db: DbConnection) {
     db
       .select()
       .from(projects)
-      .where(and(eq(projects.id, PERSONAL_PROJECT_ID), eq(projects.kind, "personal")))
+      .where(
+        and(
+          eq(projects.id, PERSONAL_PROJECT_ID),
+          eq(projects.kind, "personal"),
+        ),
+      )
       .get() ?? null
   );
 }
 
 export function ensurePersonalProject(db: DbConnection) {
   const now = Date.now();
-  db
-    .insert(projects)
+  db.insert(projects)
     .values({
       id: PERSONAL_PROJECT_ID,
       kind: "personal",
@@ -269,6 +276,7 @@ export function listProjects(db: DbConnection) {
 
 export interface UpdateProjectInput {
   name?: string;
+  sidebarThreadRowLimit?: ProjectSidebarThreadRowLimit | null;
 }
 
 export function setProjectGitRemoteUrlIfMissing(
@@ -376,7 +384,8 @@ export function reorderProject({
       );
       const currentPreviousProjectId =
         currentProjects[currentIndex - 1]?.id ?? null;
-      const currentNextProjectId = currentProjects[currentIndex + 1]?.id ?? null;
+      const currentNextProjectId =
+        currentProjects[currentIndex + 1]?.id ?? null;
       if (
         currentPreviousProjectId === previousProjectId &&
         currentNextProjectId === nextProjectId

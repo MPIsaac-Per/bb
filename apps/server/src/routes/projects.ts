@@ -106,6 +106,7 @@ function toProjectResponseProjectFields(
     kind: project.kind,
     name: project.name,
     gitRemoteUrl: project.gitRemoteUrl,
+    sidebarThreadRowLimit: project.sidebarThreadRowLimit,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };

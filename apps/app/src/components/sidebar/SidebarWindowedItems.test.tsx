@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sidebarMocks = vi.hoisted(() => ({
   scrollElementRef: null as { current: HTMLDivElement | null } | null,
+  observerRoots: [] as Array<Element | Document | null>,
 }));
 
 vi.mock("@/components/ui/sidebar.js", async (importOriginal) => {
@@ -24,7 +25,10 @@ import {
   SIDEBAR_CONTENT_SELECTOR,
   SidebarContent,
 } from "@/components/ui/sidebar.js";
-import { SidebarWindowedItems } from "./SidebarWindowedItems";
+import {
+  SIDEBAR_WINDOWED_SCROLL_ROOT_ATTRIBUTE,
+  SidebarWindowedItems,
+} from "./SidebarWindowedItems";
 
 const selectorMatch = SIDEBAR_CONTENT_SELECTOR.match(/^\[([\w-]+)="(.+)"\]$/);
 if (!selectorMatch) {
@@ -73,9 +77,16 @@ beforeEach(() => {
   });
   sidebarMocks.scrollElementRef = { current: scrollElement };
 
+  sidebarMocks.observerRoots = [];
   vi.stubGlobal(
     "IntersectionObserver",
     class {
+      constructor(
+        _callback: IntersectionObserverCallback,
+        options?: IntersectionObserverInit,
+      ) {
+        sidebarMocks.observerRoots.push(options?.root ?? null);
+      }
       observe() {}
       unobserve() {}
       disconnect() {}
@@ -164,6 +175,17 @@ describe("SidebarWindowedItems", () => {
     expect(
       document.querySelectorAll("[data-sidebar-windowed-nav]"),
     ).toHaveLength(3);
+  });
+
+  it("uses the nearest bounded project viewport as its windowing root", () => {
+    const container = mountSidebarContentContainer(200);
+    container.removeAttribute(SIDEBAR_CONTENT_ATTR);
+    container.setAttribute(SIDEBAR_WINDOWED_SCROLL_ROOT_ATTRIBUTE, "");
+
+    renderList(container);
+
+    expect(sidebarMocks.observerRoots).toContain(container);
+    expect(screen.queryByTestId("real-item-0")).toBeNull();
   });
 
   it("realizes every row when no scroll container can be found", () => {

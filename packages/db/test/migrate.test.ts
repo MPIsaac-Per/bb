@@ -294,6 +294,12 @@ function dropAppSettingsValuesTable(db: DbConnection): void {
   db.$client.prepare("DROP TABLE IF EXISTS app_settings_values").run();
 }
 
+function dropProjectSidebarThreadRowLimitColumn(db: DbConnection): void {
+  db.$client
+    .prepare("ALTER TABLE projects DROP COLUMN sidebar_thread_row_limit")
+    .run();
+}
+
 function dropRewindAddedTables(db: DbConnection): void {
   db.$client.prepare("DROP TABLE IF EXISTS thread_tabs").run();
   db.$client.prepare("DROP TABLE IF EXISTS automation_runs").run();
@@ -311,6 +317,7 @@ function dropRewindAddedTables(db: DbConnection): void {
   db.$client.prepare("DROP TABLE IF EXISTS plugin_kv").run();
   db.$client.prepare("DROP TABLE IF EXISTS plugin_settings").run();
   db.$client.prepare("DROP TABLE IF EXISTS plugin_schedules").run();
+  dropProjectSidebarThreadRowLimitColumn(db);
   db.$client
     .prepare("ALTER TABLE hosts DROP COLUMN last_rejected_protocol_version")
     .run();
@@ -1950,6 +1957,7 @@ describe("migrate", () => {
       dropEventParentToolCallIdColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
+      dropProjectSidebarThreadRowLimitColumn(db);
       migrate(db);
 
       expect(
@@ -2352,6 +2360,7 @@ describe("migrate", () => {
       dropPluginArtifactGitCheckoutRootColumn(db);
       dropMarketplaceCatalogSchema(db);
       dropEventParentToolCallIdColumn(db);
+      dropProjectSidebarThreadRowLimitColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
       expect(
@@ -2453,6 +2462,7 @@ describe("migrate", () => {
       dropPluginArtifactGitCheckoutRootColumn(db);
       dropMarketplaceCatalogSchema(db);
       dropEventParentToolCallIdColumn(db);
+      dropProjectSidebarThreadRowLimitColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
       expect(() => migrate(db)).not.toThrow();
@@ -5021,6 +5031,7 @@ describe("migrate", () => {
 
       dropEventParentToolCallIdColumn(db);
       dropMarketplaceStatsColumn(db);
+      dropProjectSidebarThreadRowLimitColumn(db);
       db.$client
         .prepare<DeleteMigrationParameters>(
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
