@@ -120,7 +120,7 @@ function ProjectActionsMenuItems({
 }: ProjectActionsMenuItemsProps) {
   const navigate = useNavigate();
   const { hostId: pickerHostId } = usePathPickerHost();
-  const { requestRename, requestDelete, requestAddLocalPath } =
+  const { requestRename, requestArchive, requestDelete, requestAddLocalPath } =
     useProjectActions();
   const showAddLocalPath =
     pickerHostId != null &&
@@ -158,6 +158,15 @@ function ProjectActionsMenuItems({
           Add local path
         </ProjectActionMenuItem>
       ) : null}
+      <ProjectActionMenuItem
+        surface={surface}
+        icon="Archive"
+        onSelect={() => {
+          requestArchive(project);
+        }}
+      >
+        Archive
+      </ProjectActionMenuItem>
       <ProjectActionMenuItem
         surface={surface}
         icon="Trash2"

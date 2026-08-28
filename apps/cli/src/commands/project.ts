@@ -18,6 +18,7 @@ import {
 } from "./machine.js";
 
 interface ProjectListCommandOptions {
+  archived?: boolean;
   includePersonal?: boolean;
   json?: boolean;
 }
@@ -332,11 +333,13 @@ export function registerProjectCommands(
     .command("list")
     .description("List projects")
     .option("--include-personal", "Include the personal project")
+    .option("--archived", "List archived projects")
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (opts: ProjectListCommandOptions) => {
         const sdk = createCliBbSdk(getUrl());
         const projects = await sdk.projects.list({
+          archived: opts.archived,
           includePersonal: opts.includePersonal,
         });
         if (outputJson(opts, projects)) return;
@@ -547,6 +550,36 @@ export function registerProjectCommands(
         if (outputJson(opts, updated)) return;
         console.log(`Project ${updated.id} updated`);
         printProject(updated);
+      }),
+    );
+
+  project
+    .command("archive <id>")
+    .description("Archive a project and its threads")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (id: string, opts: ProjectShowCommandOptions) => {
+        const archived = await createCliBbSdk(getUrl()).projects.update({
+          projectId: id,
+          archived: true,
+        });
+        if (outputJson(opts, archived)) return;
+        console.log(`Project ${archived.id} archived`);
+      }),
+    );
+
+  project
+    .command("restore <id>")
+    .description("Restore an archived project and its threads")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (id: string, opts: ProjectShowCommandOptions) => {
+        const restored = await createCliBbSdk(getUrl()).projects.update({
+          projectId: id,
+          archived: false,
+        });
+        if (outputJson(opts, restored)) return;
+        console.log(`Project ${restored.id} restored`);
       }),
     );
 

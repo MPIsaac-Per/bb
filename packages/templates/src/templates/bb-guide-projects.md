@@ -11,6 +11,7 @@ A project maps to a code repository. All threads belong to a project.
 
   bb project list                         List ordinary projects
     --include-personal                    Also include the personal project
+    --archived                            List archived projects
   bb project history <id>                 List prompt history
   bb project reorder <id>                 Reorder in the sidebar
     --after <id>                          Previous project, or omit for start
@@ -27,6 +28,9 @@ A project maps to a code repository. All threads belong to a project.
   bb project show <id>                    Show project details
   bb project update <id>                  Update a project
     --name <name>                         New name
+
+  bb project archive <id>                 Archive project and its threads
+  bb project restore <id>                 Restore an archived project and its threads
 
   bb project delete <id>                  Delete project and all threads
     --yes                                 Skip confirmation

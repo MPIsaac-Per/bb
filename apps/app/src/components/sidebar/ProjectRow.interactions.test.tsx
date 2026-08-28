@@ -60,6 +60,7 @@ vi.mock("@/hooks/usePromptDraftStorage", () => ({
 vi.mock("@/components/project/ProjectActionsProvider", () => ({
   useProjectActions: () => ({
     requestRename: vi.fn(),
+    requestArchive: vi.fn(),
     requestDelete: vi.fn(),
     requestAddLocalPath: vi.fn(),
   }),
@@ -83,6 +84,7 @@ function makeProject(): ProjectResponse {
     kind: "standard",
     name: "Test project",
     gitRemoteUrl: null,
+    archivedAt: null,
     sources: [],
     createdAt: 0,
     updatedAt: 0,

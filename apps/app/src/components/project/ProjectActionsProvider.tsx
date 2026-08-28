@@ -33,6 +33,7 @@ import { getRootComposeRoutePath } from "@/lib/route-paths";
 
 interface ProjectActionsContextValue {
   requestRename: (project: ProjectResponse) => void;
+  requestArchive: (project: ProjectResponse) => void;
   requestDelete: (project: ProjectResponse) => void;
   requestAddLocalPath: (project: ProjectResponse) => void;
 }
@@ -106,6 +107,22 @@ export function ProjectActionsProvider({
     [closeRenameDialog, updateProjectMutate],
   );
 
+  const requestArchive = useCallback(
+    (project: ProjectResponse) => {
+      updateProjectMutate(
+        { id: project.id, archived: true },
+        {
+          onSuccess: () => {
+            if (routeProjectId === project.id) {
+              navigate(getRootComposeRoutePath(), { replace: true });
+            }
+          },
+        },
+      );
+    },
+    [navigate, routeProjectId, updateProjectMutate],
+  );
+
   const requestDelete = useCallback(
     (project: ProjectResponse) => {
       openDeleteDialog({ id: project.id, name: project.name });
@@ -150,10 +167,11 @@ export function ProjectActionsProvider({
   const value = useMemo<ProjectActionsContextValue>(
     () => ({
       requestRename,
+      requestArchive,
       requestDelete,
       requestAddLocalPath,
     }),
-    [requestRename, requestDelete, requestAddLocalPath],
+    [requestRename, requestArchive, requestDelete, requestAddLocalPath],
   );
 
   return (

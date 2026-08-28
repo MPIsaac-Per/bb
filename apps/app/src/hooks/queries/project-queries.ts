@@ -15,8 +15,12 @@ import {
 import { decodeBase64Bytes } from "@/lib/base64-bytes";
 import { buildProjectFileContentUrl } from "@/lib/file-content-urls";
 import { sdk } from "@/lib/sdk";
-import { useProjectDetailRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 import {
+  useProjectDetailRealtimeSubscription,
+  useProjectListRealtimeSubscription,
+} from "@/hooks/useRealtimeSubscription";
+import {
+  archivedProjectsQueryKey,
   projectCommandsQueryKey,
   projectFilePreviewQueryKey,
   projectPathsQueryKey,
@@ -34,6 +38,7 @@ import {
   EXPENSIVE_MANUAL_QUERY_POLICY,
   HEAVY_PAYLOAD_QUERY_POLICY,
   REALTIME_OWNED_NO_FOCUS_QUERY_POLICY,
+  REALTIME_OWNED_STATIC_CACHE_QUERY_POLICY,
   TYPEAHEAD_QUERY_POLICY,
 } from "./query-policies";
 
@@ -81,6 +86,18 @@ export function stripProjectThreads(
 ): SidebarProject {
   const { threads, ...rest } = project;
   return rest;
+}
+
+export function useArchivedProjects(options?: QueryOptions) {
+  const enabled = options?.enabled ?? true;
+  useProjectListRealtimeSubscription({ enabled });
+
+  return useQuery({
+    queryKey: archivedProjectsQueryKey(),
+    queryFn: ({ signal }) => sdk.projects.list({ archived: true, signal }),
+    enabled,
+    ...REALTIME_OWNED_STATIC_CACHE_QUERY_POLICY,
+  });
 }
 
 export function useProjectSourceBranches(

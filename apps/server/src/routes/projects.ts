@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+  archiveProject,
   countProjectSources,
   findOrCreateProjectByLocalPathSource,
   getPersonalProject,
@@ -10,6 +11,7 @@ import {
   getProjectSourceByHost,
   getProjectSourceForProject,
   listProjectExecutionDefaultsByProjectIds,
+  listArchivedProjects,
   listPublicProjects,
   listProjectSourcesByProjectIds,
   listThreadSections,
@@ -18,6 +20,7 @@ import {
   updateProject,
   updateProjectSource,
   setProjectGitRemoteUrlIfMissing,
+  unarchiveProject,
   isSqliteUniqueConstraintOnColumns,
   type ReorderProjectResult,
 } from "@bb/db";
@@ -106,6 +109,7 @@ function toProjectResponseProjectFields(
     kind: project.kind,
     name: project.name,
     gitRemoteUrl: project.gitRemoteUrl,
+    archivedAt: project.archivedAt,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
@@ -148,6 +152,7 @@ function buildProjectResponses(
 }
 
 interface ProjectListOptions {
+  archived: boolean;
   includePersonal: boolean;
 }
 
@@ -155,8 +160,10 @@ function listDiscoverableProjects(
   deps: AppDeps,
   options: ProjectListOptions,
 ): ProjectResponseProjectFields[] {
-  const projects = listPublicProjects(deps.db);
-  if (!options.includePersonal) {
+  const projects = options.archived
+    ? listArchivedProjects(deps.db)
+    : listPublicProjects(deps.db);
+  if (options.archived || !options.includePersonal) {
     return projects;
   }
   const personalProject = getPersonalProject(deps.db);
@@ -207,18 +214,20 @@ function buildProjectsWithThreadsResponse(
   return buildProjectsWithThreadsResponseFromRows(
     deps,
     listDiscoverableProjects(deps, options),
+    options.archived,
   );
 }
 
 function buildProjectsWithThreadsResponseFromRows(
   deps: AppDeps,
   projectRows: ProjectResponseProjectFields[],
+  archived = false,
 ): ProjectWithThreadsResponse[] {
   const projects = buildProjectResponsesFromRows(deps, projectRows);
   const projectIds = projects.map((project) => project.id);
   const threadRows = listThreadsWithPendingInteractionStateForProjects(
     deps.db,
-    { archived: false, projectIds },
+    { archived, projectIds },
   );
   const threadResponses = toThreadListEntryResponses(deps, {
     threads: threadRows,
@@ -340,6 +349,7 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
   get(routes.list, (context, query) => {
     const includes = parseProjectListIncludes(query);
     const options: ProjectListOptions = {
+      archived: query.archived === "true",
       includePersonal: query.includePersonal === "true",
     };
     if (includes.has("threads")) {
@@ -424,17 +434,37 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
   });
 
   patch(routes.update, async (context, payload) => {
-    requirePublicStandardProject(deps.db, context.req.param("id"));
-    const project = updateProject(
-      deps.db,
-      deps.hub,
-      context.req.param("id"),
-      payload,
-    );
-    if (!project) {
+    const projectId = context.req.param("id");
+    const existingProject = requirePublicProject(deps.db, projectId);
+    if (existingProject.kind !== "standard") {
       throw new ApiError(404, "project_not_found", "Project not found");
     }
-    return context.json(buildProjectResponses(deps, project.id)[0]);
+    let project = existingProject;
+
+    if (payload.archived === true) {
+      project =
+        archiveProject(deps.db, deps.hub, projectId) ??
+        (() => {
+          throw new ApiError(404, "project_not_found", "Project not found");
+        })();
+    } else if (payload.archived === false) {
+      project =
+        unarchiveProject(deps.db, deps.hub, projectId) ??
+        (() => {
+          throw new ApiError(404, "project_not_found", "Project not found");
+        })();
+    }
+
+    if (payload.name !== undefined) {
+      project = updateProject(deps.db, deps.hub, projectId, {
+        name: payload.name,
+      });
+      if (!project) {
+        throw new ApiError(404, "project_not_found", "Project not found");
+      }
+    }
+
+    return context.json(buildProjectResponsesFromRows(deps, [project])[0]);
   });
 
   patch(routes.reorder, async (context, payload) => {

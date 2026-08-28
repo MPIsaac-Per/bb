@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, isNotNull } from "drizzle-orm";
 import { PERSONAL_PROJECT_ID } from "@bb/domain";
 import type {
   DbConnection,
@@ -6,7 +6,7 @@ import type {
   DbTransaction,
 } from "../connection.js";
 import type { DbNotifier } from "../notifier.js";
-import { projects, projectSources } from "../schema.js";
+import { projects, projectSources, threads } from "../schema.js";
 import { createProjectId, createProjectSourceId } from "../ids.js";
 import { toProjectSource } from "./project-sources.js";
 import { createOrderKeyAfter, createOrderKeyBetween } from "./order-keys.js";
@@ -69,7 +69,19 @@ export type ReorderProjectResult =
   | ReorderProjectInvalidNeighborOrder;
 
 function publicProjectFilter() {
-  return and(eq(projects.kind, "standard"), isNull(projects.deletedAt));
+  return and(
+    eq(projects.kind, "standard"),
+    isNull(projects.archivedAt),
+    isNull(projects.deletedAt),
+  );
+}
+
+function archivedProjectFilter() {
+  return and(
+    eq(projects.kind, "standard"),
+    isNotNull(projects.archivedAt),
+    isNull(projects.deletedAt),
+  );
 }
 
 export function listPublicProjects(db: DbQueryConnection): ProjectRow[] {
@@ -78,6 +90,15 @@ export function listPublicProjects(db: DbQueryConnection): ProjectRow[] {
     .from(projects)
     .where(publicProjectFilter())
     .orderBy(asc(projects.sortKey), asc(projects.id))
+    .all();
+}
+
+export function listArchivedProjects(db: DbQueryConnection): ProjectRow[] {
+  return db
+    .select()
+    .from(projects)
+    .where(archivedProjectFilter())
+    .orderBy(desc(projects.archivedAt), desc(projects.id))
     .all();
 }
 
@@ -269,6 +290,106 @@ export function listProjects(db: DbConnection) {
 
 export interface UpdateProjectInput {
   name?: string;
+}
+
+function notifyProjectLifecycle(
+  notifier: DbNotifier,
+  projectId: string,
+  threadIds: readonly string[],
+): void {
+  notifier.notifyProject(projectId, ["project-updated", "threads-changed"]);
+  for (const threadId of threadIds) {
+    notifier.notifyThread(threadId, ["archived-changed"], {
+      projectId,
+    });
+  }
+}
+
+export function archiveProject(
+  db: DbConnection,
+  notifier: DbNotifier,
+  projectId: string,
+): ProjectRow | null {
+  const result = db.transaction((tx) => {
+    const project = tx
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, projectId), publicProjectFilter()))
+      .get();
+    if (!project) return null;
+
+    const archivedAt = Date.now();
+    const archivedThreads = tx
+      .update(threads)
+      .set({ archivedAt, updatedAt: archivedAt })
+      .where(
+        and(
+          eq(threads.projectId, projectId),
+          isNull(threads.archivedAt),
+          isNull(threads.deletedAt),
+        ),
+      )
+      .returning({ id: threads.id })
+      .all();
+    const archivedProject = tx
+      .update(projects)
+      .set({ archivedAt, updatedAt: archivedAt })
+      .where(eq(projects.id, projectId))
+      .returning()
+      .get();
+    if (!archivedProject) return null;
+    return {
+      project: archivedProject,
+      threadIds: archivedThreads.map((thread) => thread.id),
+    };
+  });
+
+  if (!result) return null;
+  notifyProjectLifecycle(notifier, projectId, result.threadIds);
+  return result.project;
+}
+
+export function unarchiveProject(
+  db: DbConnection,
+  notifier: DbNotifier,
+  projectId: string,
+): ProjectRow | null {
+  const result = db.transaction((tx) => {
+    const project = tx
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, projectId), archivedProjectFilter()))
+      .get();
+    if (!project || project.archivedAt === null) return null;
+
+    const unarchivedThreads = tx
+      .update(threads)
+      .set({ archivedAt: null, updatedAt: Date.now() })
+      .where(
+        and(
+          eq(threads.projectId, projectId),
+          eq(threads.archivedAt, project.archivedAt),
+          isNull(threads.deletedAt),
+        ),
+      )
+      .returning({ id: threads.id })
+      .all();
+    const unarchivedProject = tx
+      .update(projects)
+      .set({ archivedAt: null, updatedAt: Date.now() })
+      .where(eq(projects.id, projectId))
+      .returning()
+      .get();
+    if (!unarchivedProject) return null;
+    return {
+      project: unarchivedProject,
+      threadIds: unarchivedThreads.map((thread) => thread.id),
+    };
+  });
+
+  if (!result) return null;
+  notifyProjectLifecycle(notifier, projectId, result.threadIds);
+  return result.project;
 }
 
 export function setProjectGitRemoteUrlIfMissing(

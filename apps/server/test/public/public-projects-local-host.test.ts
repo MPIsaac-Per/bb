@@ -2,6 +2,7 @@ import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import {
   ensurePersonalProject,
+  getThread,
   listPublicProjects,
   setExperiments,
 } from "@bb/db";
@@ -25,6 +26,7 @@ import { withTestHarness } from "../helpers/test-app.js";
 const projectResponseSchema = z.object({
   id: z.string(),
   gitRemoteUrl: z.string().nullable(),
+  archivedAt: z.number().nullable(),
   sources: z.array(
     z.object({
       id: z.string(),
@@ -34,6 +36,66 @@ const projectResponseSchema = z.object({
 });
 
 describe("public project local host routes", () => {
+  it("archives projects with their threads and restores them", async () => {
+    await withTestHarness(async (harness) => {
+      const host = seedHost(harness.deps, { id: "host-project-archive" });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        name: "Archive me",
+      });
+      const thread = seedThread(harness.deps, { projectId: project.id });
+
+      const archiveResponse = await harness.app.request(
+        `/api/v1/projects/${project.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ archived: true }),
+        },
+      );
+
+      expect(archiveResponse.status).toBe(200);
+      const archivedProject = projectResponseSchema.parse(
+        await readJson(archiveResponse),
+      );
+      expect(archivedProject).toEqual(
+        expect.objectContaining({ archivedAt: expect.any(Number) }),
+      );
+      const activeProjectsResponse =
+        await harness.app.request("/api/v1/projects");
+      expect(await readJson(activeProjectsResponse)).toEqual([]);
+      const archivedProjectsResponse = await harness.app.request(
+        "/api/v1/projects?archived=true",
+      );
+      expect(await readJson(archivedProjectsResponse)).toEqual([
+        expect.objectContaining({ id: project.id }),
+      ]);
+      expect(getThread(harness.db, thread.id)?.archivedAt).toBe(
+        archivedProject.archivedAt,
+      );
+
+      const restoreResponse = await harness.app.request(
+        `/api/v1/projects/${project.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ archived: false }),
+        },
+      );
+
+      expect(restoreResponse.status).toBe(200);
+      expect(await readJson(restoreResponse)).toEqual(
+        expect.objectContaining({ id: project.id, archivedAt: null }),
+      );
+      expect(getThread(harness.db, thread.id)?.archivedAt).toBeNull();
+      const restoredProjectsResponse =
+        await harness.app.request("/api/v1/projects");
+      expect(await readJson(restoredProjectsResponse)).toEqual([
+        expect.objectContaining({ id: project.id }),
+      ]);
+    });
+  });
+
   it("creates a project when a personal thread already uses its folder", async () => {
     await withTestHarness(async (harness) => {
       const offlinePrimary = seedHost(harness.deps, {

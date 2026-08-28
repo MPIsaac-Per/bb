@@ -39,8 +39,11 @@ import {
   renameThreadSection,
 } from "../../src/data/thread-sections.js";
 import {
+  archiveProject,
   createProject,
+  listArchivedProjects,
   markProjectDeleted,
+  unarchiveProject,
 } from "../../src/data/projects.js";
 import { upsertHost } from "../../src/data/hosts.js";
 import { createEnvironment } from "../../src/data/environments.js";
@@ -1232,6 +1235,27 @@ describe("threads", () => {
     expect(deleted?.deletedAt).toBeTypeOf("number");
     expect(getThread(db, thread.id)?.deletedAt).toBeTypeOf("number");
     expect(listThreads(db, { projectId: project.id })).toHaveLength(0);
+  });
+
+  it("archives a project and its threads as one reversible lifecycle", () => {
+    const { db, project } = setup();
+    const thread = createThread(db, noopNotifier, {
+      projectId: project.id,
+      providerId: "codex",
+    });
+
+    const archived = archiveProject(db, noopNotifier, project.id);
+
+    expect(archived?.archivedAt).toBeTypeOf("number");
+    expect(listArchivedProjects(db).map((item) => item.id)).toEqual([
+      project.id,
+    ]);
+    expect(getThread(db, thread.id)?.archivedAt).toBe(archived?.archivedAt);
+
+    const restored = unarchiveProject(db, noopNotifier, project.id);
+
+    expect(restored?.archivedAt).toBeNull();
+    expect(getThread(db, thread.id)?.archivedAt).toBeNull();
   });
 
   it("archives a thread", () => {
