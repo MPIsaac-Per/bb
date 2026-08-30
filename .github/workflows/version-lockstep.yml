@@ -2,7 +2,11 @@ name: Version Lockstep
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches-ignore:
+      - mpiv/prod
   workflow_dispatch:
 
 permissions:

@@ -19,9 +19,9 @@ Core database changes carry the highest downstream maintenance cost because Driz
 - Feature branches start from and merge into `mpiv/prod`.
 - `automation/upstream-sync` is disposable integration state maintained by the sync workflow.
 
-The daily `Sync MPIV With Upstream` workflow fast-forwards the fork's `main`, prepares one merge branch, and opens or updates a draft pull request against `mpiv/prod`. It never deploys. Resolve conflicts in that pull request, run the full gates, and merge only after review.
+The daily `Sync MPIV With Upstream` workflow fast-forwards the fork's `main`, prepares one merge branch, and opens or updates a draft pull request against `mpiv/prod`. It never deploys. Resolve conflicts, run the focused downstream PR gate plus the slice-specific checks named in the pull request, and merge only after review.
 
-The repository must allow GitHub Actions to create pull requests before this workflow can run. That GitHub setting also permits workflow-authored review approvals, so enabling it is an IRR-4 permissions decision. The workflow fails before pushing when the setting is disabled.
+The repository must allow GitHub Actions to create pull requests before this workflow can complete. That GitHub setting also permits workflow-authored review approvals, so enabling it is an IRR-4 permissions decision.
 
 ## Local Dogfood
 
@@ -37,7 +37,7 @@ Use `--desktop` only for Electron main-process behavior. Server and web changes 
 
 ## Build
 
-Every pull request into `mpiv/prod` runs the repository's full, sharded CI before merge. Every resulting push to `mpiv/prod` runs `Build MPIV Distribution`. It derives a next-patch version such as `0.40.1-mpiv.123456.1`, validates the downstream distribution tooling, smoke-tests the real package, and uploads:
+Every pull request into `mpiv/prod` runs one focused `@bb/scripts` typecheck-and-test job. Slice-specific checks are run before the pull request and recorded in its verification section. Every resulting push to `mpiv/prod` runs `Build MPIV Distribution`, which derives a next-patch version such as `0.40.1-mpiv.123456.1`, validates the downstream distribution tooling, smoke-tests the real package, and uploads:
 
 - `bb-app-<version>.tgz`
 - `mpiv-provenance.json`

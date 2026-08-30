@@ -268,6 +268,29 @@ describe("MPIV workflows", () => {
     expect(workflow).not.toContain("mpiv-hub-deploy");
   });
 
+  it("runs one focused validation job for mpiv/prod pull requests", () => {
+    const mpivWorkflow = readFileSync(
+      join(repoRoot, ".github", "workflows", "mpiv-build.yml"),
+      "utf8",
+    );
+    const genericWorkflowPaths = [
+      "ci.yml",
+      "mobile-e2e.yml",
+      "version-lockstep.yml",
+    ];
+
+    expect(mpivWorkflow).toContain("pull_request:");
+    expect(mpivWorkflow).toContain("name: Validate MPIV change");
+    for (const workflowPath of genericWorkflowPaths) {
+      const workflow = readFileSync(
+        join(repoRoot, ".github", "workflows", workflowPath),
+        "utf8",
+      );
+      expect(workflow).toContain("branches-ignore:");
+      expect(workflow).toContain("- mpiv/prod");
+    }
+  });
+
   it("prepares one non-deploying upstream integration pull request", () => {
     const workflow = readFileSync(
       join(repoRoot, ".github", "workflows", "mpiv-upstream-sync.yml"),
@@ -277,7 +300,7 @@ describe("MPIV workflows", () => {
     expect(workflow).toContain("schedule:");
     expect(workflow).toContain("https://github.com/get-bb/bb.git");
     expect(workflow).toContain("automation/upstream-sync");
-    expect(workflow).toContain("actions/permissions/workflow");
+    expect(workflow).not.toContain("actions/permissions/workflow");
     expect(workflow).toContain("--base mpiv/prod");
     expect(workflow).toContain("gh pr create");
     expect(workflow).toContain("> AGENT GENERATED");
