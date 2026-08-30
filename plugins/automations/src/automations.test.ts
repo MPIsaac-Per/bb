@@ -168,6 +168,8 @@ function createAutomationServiceBb() {
           kind: "standard" as const,
           name: "Test Project",
           gitRemoteUrl: null,
+          archivedAt: null,
+          sidebarThreadRowLimit: null,
           createdAt: 1,
           updatedAt: 1,
           sources: [],
