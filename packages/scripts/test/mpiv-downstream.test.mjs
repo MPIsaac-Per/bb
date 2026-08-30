@@ -257,6 +257,8 @@ describe("MPIV workflows", () => {
     );
 
     expect(workflow).toContain("mpiv/prod");
+    expect(workflow).toContain("https://github.com/get-bb/bb.git");
+    expect(workflow).toContain("BB_MPIV_UPSTREAM_REF: upstream/main");
     expect(workflow).toContain("prepare-mpiv-version.mjs");
     expect(workflow).toContain("prepare-mpiv-artifact.mjs");
     expect(workflow).toContain("turbo run typecheck test --filter=@bb/scripts");

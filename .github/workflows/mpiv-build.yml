@@ -25,8 +25,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch mirrored upstream branch
-        run: git fetch origin main:refs/remotes/origin/main
+      - name: Fetch authoritative upstream branch
+        run: git fetch --no-tags https://github.com/get-bb/bb.git main:refs/remotes/upstream/main
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
@@ -54,7 +54,7 @@ jobs:
 
       - name: Package artifact and provenance
         env:
-          BB_MPIV_UPSTREAM_REF: origin/main
+          BB_MPIV_UPSTREAM_REF: upstream/main
           GITHUB_REF_NAME: mpiv/prod
         run: node scripts/prepare-mpiv-artifact.mjs .artifacts/mpiv
 

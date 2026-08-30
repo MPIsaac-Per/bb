@@ -42,7 +42,7 @@ Every pull request into `mpiv/prod` runs the repository's full, sharded CI befor
 - `bb-app-<version>.tgz`
 - `mpiv-provenance.json`
 
-The manifest binds the artifact checksum to the source commit, upstream merge base, custom commit count, protocol version, and build time. The workflow does not publish to npm and cannot deploy mpiv-hub.
+The manifest binds the artifact checksum to the source commit, the merge base fetched directly from `get-bb/bb`, custom commit count, protocol version, and build time. The workflow does not publish to npm and cannot deploy mpiv-hub.
 
 To prepare the same outputs locally with the required distribution gates and package build:
 
