@@ -96,3 +96,49 @@ jobs:
       - name: Summarize build
         run: |
           node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(".artifacts/mpiv/mpiv-provenance.json","utf8")); process.stdout.write(`## MPIV BB artifact\n\n- version: \`${p.version}\`\n- source: \`${p.sourceCommit}\`\n- upstream base: \`${p.upstreamBase}\`\n- custom commits: \`${p.customCommitCount}\`\n- protocol: \`${p.protocolVersion}\`\n- sha256: \`${p.artifact.sha256}\`\n`)' >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    name: Deploy approved build to mpiv-hub
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: mpiv-production
+      url: https://mpiv.getbb.app
+
+    steps:
+      - name: Download immutable artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: mpiv-bb-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/mpiv
+
+      - name: Create approved deployment marker
+        env:
+          MPIV_RUN_ATTEMPT: ${{ github.run_attempt }}
+          MPIV_RUN_ID: ${{ github.run_id }}
+          MPIV_SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          mkdir -p .artifacts/approval
+          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const marker={runAttempt:Number(process.env.MPIV_RUN_ATTEMPT),runId:Number(process.env.MPIV_RUN_ID),sha256:p.artifact.sha256,sourceCommit:process.env.MPIV_SOURCE_COMMIT,version:p.version}; fs.writeFileSync(process.argv[2],JSON.stringify(marker,null,2)+"\n")' .artifacts/mpiv/mpiv-provenance.json .artifacts/approval/approval.json
+
+      - name: Publish approved deployment marker
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mpiv-deploy-approved-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/approval/approval.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Wait for Hub deployment
+        run: |
+          expected_version="$(node -e 'const fs=require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).version)' .artifacts/mpiv/mpiv-provenance.json)"
+          for attempt in $(seq 1 40); do
+            actual_version="$(curl --fail --silent --show-error https://mpiv.getbb.app/install/version | node -e 'let body=""; process.stdin.on("data",chunk=>body+=chunk); process.stdin.on("end",()=>process.stdout.write(JSON.parse(body).version))')" || true
+            if [ "$actual_version" = "$expected_version" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1

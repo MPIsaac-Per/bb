@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for approved MPIV BB builds
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=20s
+Persistent=true
+Unit=bb-mpiv-deploy-worker.service
+
+[Install]
+WantedBy=timers.target

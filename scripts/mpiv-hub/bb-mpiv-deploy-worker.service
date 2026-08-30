@@ -1,0 +1,10 @@
+[Unit]
+Description=Deploy approved MPIV BB builds
+After=network-online.target bb-server.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=/home/michael/.bb-mpiv/worker
+ExecStart=/usr/bin/node /home/michael/.bb-mpiv/worker/mpiv-hub-worker.mjs

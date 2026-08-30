@@ -42,7 +42,7 @@ Every pull request into `mpiv/prod` runs one focused `@bb/scripts` typecheck-and
 - `bb-app-<version>.tgz`
 - `mpiv-provenance.json`
 
-The manifest binds the artifact checksum to the source commit, the merge base fetched directly from `get-bb/bb`, custom commit count, protocol version, and build time. The workflow does not publish to npm and cannot deploy mpiv-hub.
+The manifest binds the artifact checksum to the source commit, the merge base fetched directly from `get-bb/bb`, custom commit count, protocol version, and build time. The artifact job cannot deploy. Its dependent deployment job waits for approval in the protected `mpiv-production` environment, publishes an artifact-bound approval marker, and waits for mpiv-hub to report the exact version.
 
 To prepare the same outputs locally with the required distribution gates and package build:
 
@@ -55,7 +55,24 @@ node scripts/prepare-mpiv-artifact.mjs .artifacts/mpiv
 
 Version preparation modifies both package manifests in the working tree. Use a disposable release worktree or CI checkout; do not commit the generated prerelease version.
 
-## Production Plan And Approval
+## Default Hub Deployment
+
+The default target for every approved `mpiv/prod` build is mpiv-hub. The Hub worker polls GitHub using the Hub's authenticated `gh` CLI, accepts only the newest build with a matching approval marker, and runs the same rollback-first installer locally. It records each attempted run in `/home/michael/.bb-mpiv/worker/state.json` before installation, so a failed release is not retried automatically.
+
+Install or update the worker from a verified `mpiv/prod` checkout:
+
+```bash
+ssh hub 'mkdir -p /home/michael/.bb-mpiv/worker /home/michael/.config/systemd/user'
+scp scripts/mpiv-hub-deploy.mjs scripts/mpiv-hub-worker.mjs hub:/home/michael/.bb-mpiv/worker/
+scp scripts/mpiv-hub/bb-mpiv-deploy-worker.service scripts/mpiv-hub/bb-mpiv-deploy-worker.timer hub:/home/michael/.config/systemd/user/
+ssh hub 'systemctl --user daemon-reload && systemctl --user enable --now bb-mpiv-deploy-worker.timer'
+```
+
+The workflow's `mpiv-production` environment requires Michael's approval under IRR-5. Approval publishes `mpiv-deploy-approved-<run>-<attempt>`, which binds the run, source commit, version, and checksum. Without that exact marker, the worker does nothing.
+
+Protocol changes update enrolled machines from the Hub's exact `/install/bb-app.tgz`. A disconnected machine updates when it reconnects. A compatible daemon-only change still needs the explicit machine rollout described below.
+
+## Manual Production Plan And Approval
 
 Download the CI artifact into one directory. Validate and display the non-mutating plan:
 
@@ -88,7 +105,7 @@ Then create one real thread on the intended machine. That production completion 
 
 ## Runtime Alignment
 
-The Hub server and colocated daemon run the installed downstream package. The server regenerates `/install/bb-app.tgz` from that exact package. Enrolled daemons update automatically only when a newer server-daemon protocol rejects them. Increment `HOST_DAEMON_PROTOCOL_VERSION` for every wire change, never merely to force a release.
+The default deployment target is mpiv-hub. The Hub server and colocated daemon run the installed downstream package, and the server regenerates `/install/bb-app.tgz` from that exact package. Enrolled daemons update automatically only when a newer server-daemon protocol rejects them. Increment `HOST_DAEMON_PROTOCOL_VERSION` for every wire change, never merely to force a release.
 
 A daemon-only implementation change with a compatible wire needs a deliberate package update on each affected enrolled machine. Server and web changes do not require that rollout. A desktop-process change requires a separately named, signed MPIV desktop application and update feed; until one is justified, retain the upstream-signed shell.
 
