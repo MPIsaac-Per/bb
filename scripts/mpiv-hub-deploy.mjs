@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -80,15 +80,16 @@ function defaultRunCommand(options) {
         resolvePromise({ stderr, stdout });
         return;
       }
+      const output = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
       rejectPromise(
-        new Error(`${options.command} exited ${code}: ${stderr.trim()}`),
+        new Error(`${options.command} exited ${code}: ${output}`),
       );
     });
     child.stdin.end(options.input ?? "");
   });
 }
 
-async function readDeploymentInputs(artifactPath, manifestPath) {
+export async function readDeploymentInputs(artifactPath, manifestPath) {
   const artifact = await readFile(artifactPath);
   const parsed = JSON.parse(await readFile(manifestPath, "utf8"));
   if (
@@ -133,8 +134,9 @@ async function readDeploymentInputs(artifactPath, manifestPath) {
 }
 
 export async function deployMpivHub(options) {
-  const host = options.host ?? "hub";
-  if (!hostPattern.test(host)) {
+  const local = options.local ?? false;
+  const host = local ? "local" : (options.host ?? "hub");
+  if (!local && !hostPattern.test(host)) {
     throw new Error(`Invalid SSH host: ${host}`);
   }
   const artifactPath = resolve(options.artifactPath);
@@ -144,12 +146,34 @@ export async function deployMpivHub(options) {
     manifestPath,
   );
   const releaseId = `${version}-${sha256.slice(0, 12)}`;
-  const remoteDir = `/home/michael/.bb-mpiv/releases/${releaseId}`;
+  const releaseRoot =
+    options.releaseRoot ?? "/home/michael/.bb-mpiv/releases";
+  const remoteDir = resolve(releaseRoot, releaseId);
   const plan = { host, mode: "plan", releaseId, remoteDir, sha256, version };
   if (!options.deploy) {
     return plan;
   }
   const runCommand = options.runCommand ?? defaultRunCommand;
+  if (local) {
+    await mkdir(remoteDir, { recursive: true });
+    await Promise.all([
+      copyFile(artifactPath, resolve(remoteDir, basename(artifactPath))),
+      copyFile(manifestPath, resolve(remoteDir, basename(manifestPath))),
+    ]);
+    const result = await runCommand({
+      args: [
+        "-s",
+        "--",
+        remoteDir,
+        version,
+        basename(artifactPath),
+        basename(manifestPath),
+      ],
+      command: "bash",
+      input: remoteInstaller,
+    });
+    return { ...plan, mode: "deployed", stdout: result.stdout.trim() };
+  }
   await runCommand({
     args: [host, "mkdir", "-p", remoteDir],
     command: "ssh",
@@ -180,12 +204,15 @@ function parseArgs(args) {
     artifactPath: "",
     deploy: false,
     host: "hub",
+    local: false,
     manifestPath: "",
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--deploy") {
       parsed.deploy = true;
+    } else if (argument === "--local") {
+      parsed.local = true;
     } else if (argument === "--artifact") {
       parsed.artifactPath = args[index + 1] ?? "";
       index += 1;
@@ -201,7 +228,7 @@ function parseArgs(args) {
   }
   if (!parsed.artifactPath || !parsed.manifestPath) {
     throw new Error(
-      "Usage: node scripts/mpiv-hub-deploy.mjs --artifact <tgz> --manifest <json> [--host hub] [--deploy]",
+      "Usage: node scripts/mpiv-hub-deploy.mjs --artifact <tgz> --manifest <json> [--host hub | --local] [--deploy]",
     );
   }
   return parsed;

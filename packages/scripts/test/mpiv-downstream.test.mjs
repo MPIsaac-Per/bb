@@ -227,6 +227,35 @@ describe("MPIV Hub deployment", () => {
       }),
     ).toMatchObject({ status: 0, stderr: "" });
   });
+
+  it("installs an approved release locally on mpiv-hub", async () => {
+    const fixture = createDeploymentFixture();
+    const releaseRoot = join(fixture.artifactPath, "..", "releases");
+    const runCommand = vi.fn(async () => ({ stderr: "", stdout: "deployed" }));
+    const result = await deployMpivHub({
+      ...fixture,
+      deploy: true,
+      local: true,
+      releaseRoot,
+      runCommand,
+    });
+
+    expect(result).toMatchObject({ host: "local", mode: "deployed" });
+    expect(runCommand).toHaveBeenCalledTimes(1);
+    expect(runCommand.mock.calls[0][0]).toMatchObject({
+      command: "bash",
+      input: expect.stringContaining("rollback"),
+    });
+    expect(
+      readFileSync(
+        join(
+          result.remoteDir,
+          "bb-app-1.2.4-mpiv.10.1.tgz",
+        ),
+        "utf8",
+      ),
+    ).toBe("artifact");
+  });
 });
 
 describe("MPIV workflows", () => {
@@ -266,6 +295,18 @@ describe("MPIV workflows", () => {
     expect(workflow).toContain("actions/upload-artifact");
     expect(workflow).not.toContain("npm publish");
     expect(workflow).not.toContain("mpiv-hub-deploy");
+  });
+
+  it("waits for production approval before requesting Hub deployment", () => {
+    const workflow = readFileSync(
+      join(repoRoot, ".github", "workflows", "mpiv-build.yml"),
+      "utf8",
+    );
+
+    expect(workflow).toContain("name: mpiv-production");
+    expect(workflow).toContain("mpiv-deploy-approved-");
+    expect(workflow).toContain("Wait for Hub deployment");
+    expect(workflow).toContain("https://mpiv.getbb.app/install/version");
   });
 
   it("runs one focused validation job for mpiv/prod pull requests", () => {
