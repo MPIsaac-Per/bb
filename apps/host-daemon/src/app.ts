@@ -45,7 +45,10 @@ import {
 import { runtimeErrorLogFields, summarizeError } from "./error-utils.js";
 import { ensureThreadStorageRoot } from "./thread-storage-root.js";
 import type { AgentRuntimeOptions } from "@bb/agent-runtime";
-import { createProtocolSelfUpdater } from "./protocol-self-update.js";
+import {
+  createProtocolSelfUpdater,
+  type ProtocolSelfUpdateInstaller,
+} from "./protocol-self-update.js";
 import {
   type HostType,
   type ToolCallRequest,
@@ -116,6 +119,7 @@ interface CreateHostDaemonAppOptions {
   machineCredential?: string;
   connectMachineId?: string;
   autoUpdate?: boolean;
+  currentBbAppVersion?: string;
   releaseLock: () => Promise<void>;
   localApiConfig: HostDaemonLocalApiConfig | null;
   createRuntime?: RuntimeManagerOptions["createRuntime"];
@@ -128,6 +132,7 @@ interface CreateHostDaemonAppOptions {
   hostWatcher?: HostWatcher;
   onToolCall?: (request: ToolCallRequest) => Promise<ToolCallResponse>;
   fetchFn?: FetchFn;
+  installSelfUpdateTarball?: ProtocolSelfUpdateInstaller;
   createWebSocket?: CreateReconnectingWebSocket;
   closeMachineAuthProxy?: () => Promise<void>;
   forceExit?: (code: number) => void;
@@ -742,7 +747,23 @@ export async function createHostDaemonApp(
     },
   });
 
+  const protocolSelfUpdater = createProtocolSelfUpdater({
+    ...(options.currentBbAppVersion === undefined
+      ? {}
+      : { currentVersion: options.currentBbAppVersion }),
+    dataDir: options.dataDir,
+    enabled: options.autoUpdate ?? false,
+    fetchFn: options.fetchFn,
+    ...(options.installSelfUpdateTarball === undefined
+      ? {}
+      : { installTarball: options.installSelfUpdateTarball }),
+    logger: options.logger,
+    serverUrl: options.serverUrl,
+  });
+
   const router = new CommandRouter({
+    installServerRelease: (command) =>
+      protocolSelfUpdater.installServerRelease(command),
     dataDir: options.dataDir,
     fetchProjectAttachment: (args) =>
       runSessionRequest({
@@ -826,13 +847,7 @@ export async function createHostDaemonApp(
     machineCredential: options.machineCredential,
     connectMachineId: options.connectMachineId,
     serverClient,
-    protocolSelfUpdater: createProtocolSelfUpdater({
-      dataDir: options.dataDir,
-      enabled: options.autoUpdate ?? false,
-      fetchFn: options.fetchFn,
-      logger: options.logger,
-      serverUrl: options.serverUrl,
-    }),
+    protocolSelfUpdater,
     onSelfUpdateInstalled: () => requestDaemonRestart(),
     createWebSocket: options.createWebSocket,
     getActiveThreads: () => runtimeManager.listActiveThreads(),
@@ -845,6 +860,13 @@ export async function createHostDaemonApp(
       }
       const response = await router.handleOnlineRpcRequest(message);
       sendServerMessage(response);
+      if (
+        response.ok &&
+        response.commandType === "daemon.install_release" &&
+        response.result.outcome === "installed"
+      ) {
+        requestDaemonRestart();
+      }
     },
     onWatchSetReplace: async (message) => {
       await watchManager.replaceWatchSet({

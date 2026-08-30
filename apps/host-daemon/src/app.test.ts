@@ -9,6 +9,7 @@ import {
   type ToolCallRequest,
 } from "@bb/domain";
 import {
+  HOST_DAEMON_PROTOCOL_VERSION,
   hostDaemonEventBatchRequestSchema,
   hostDaemonInteractiveInterruptRequestSchema,
   type HostDaemonInteractiveRequestResponse,
@@ -47,6 +48,8 @@ interface FetchRecorder {
 }
 
 interface CreateFetchRecorderArgs {
+  installProtocolVersion?: number;
+  installVersion?: string;
   inactiveSessionOnFirstEventPost?: boolean;
   interactiveRequestError?: Error;
   interactiveRequestResponse?: HostDaemonInteractiveRequestResponse;
@@ -174,6 +177,17 @@ function createFetchRecorder(
       });
     }
 
+    if (url.pathname === "/install/version") {
+      return Response.json({
+        version: args.installVersion ?? "9.1.0-test",
+        protocolVersion:
+          args.installProtocolVersion ?? HOST_DAEMON_PROTOCOL_VERSION,
+      });
+    }
+    if (url.pathname === "/install/bb-app.tgz") {
+      return new Response("tarball");
+    }
+
     if (
       /^\/internal\/plugins\/[^/]+\/host\/[a-f0-9]{64}$/u.test(url.pathname)
     ) {
@@ -196,7 +210,9 @@ function createFetchRecorder(
   };
 }
 
-function createOpeningWebSocket(): CreateReconnectingWebSocket {
+function createOpeningWebSocket(
+  onSocket?: (socket: ReconnectingWebSocketLike) => void,
+): CreateReconnectingWebSocket {
   return (urlProvider) => {
     let readyState = 0;
     const socket: ReconnectingWebSocketLike = {
@@ -213,6 +229,7 @@ function createOpeningWebSocket(): CreateReconnectingWebSocket {
       }),
       reconnect: vi.fn(),
     };
+    onSocket?.(socket);
     const openSocket = async () => {
       await urlProvider();
       queueMicrotask(() => {
@@ -410,6 +427,151 @@ describe("createHostDaemonApp", () => {
     await app.daemon.shutdown("test");
 
     expect(closeMachineAuthProxy).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends an installed response before graceful self-update shutdown", async () => {
+    const dataDir = await makeTempDir("bb-host-daemon-app-release-");
+    const fetchRecorder = createFetchRecorder({
+      installProtocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+      installVersion: "9.1.0-test",
+    });
+    const logger = createLogger();
+    const installSelfUpdateTarball = vi.fn(async () => undefined);
+    const releaseLock = vi.fn(async () => undefined);
+    const socketRef: { current: ReconnectingWebSocketLike | null } = {
+      current: null,
+    };
+    const app = await createHostDaemonApp({
+      autoUpdate: true,
+      currentBbAppVersion: "9.0.0-test",
+      dataDir,
+      serverUrl: "http://127.0.0.1:3334",
+      hostKey: "host-key-release-test",
+      hostType: "persistent",
+      hostId: "host-release-test",
+      hostName: "Release Test Host",
+      instanceId: "instance-release-test",
+      logger,
+      releaseLock,
+      localApiConfig: null,
+      createRuntime: () => createFakeRuntime(),
+      fetchFn: fetchRecorder.fetchFn,
+      installSelfUpdateTarball,
+      createWebSocket: createOpeningWebSocket((socket) => {
+        socketRef.current = socket;
+      }),
+    });
+
+    await app.daemon.start();
+    const socket = socketRef.current;
+    if (!socket) {
+      throw new Error("Expected test socket");
+    }
+    await vi.waitFor(() => {
+      expect(socket.readyState).toBe(1);
+    });
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: "host-rpc.request",
+        requestId: "install-release-app-test",
+        command: {
+          type: "daemon.install_release",
+          expectedVersion: "9.1.0-test",
+        },
+      }),
+    });
+
+    await app.daemon.waitUntilStopped();
+    const send = vi.mocked(socket.send);
+    const responseCallIndex = send.mock.calls.findIndex(([message]) => {
+      const parsed: unknown = JSON.parse(String(message));
+      return (
+        parsed !== null &&
+        typeof parsed === "object" &&
+        "requestId" in parsed &&
+        parsed.requestId === "install-release-app-test"
+      );
+    });
+    expect(responseCallIndex).toBeGreaterThanOrEqual(0);
+    expect(JSON.parse(String(send.mock.calls[responseCallIndex]?.[0]))).toEqual({
+      type: "host-rpc.response",
+      requestId: "install-release-app-test",
+      commandType: "daemon.install_release",
+      ok: true,
+      result: {
+        outcome: "installed",
+        version: "9.1.0-test",
+      },
+    });
+    expect(
+      send.mock.invocationCallOrder[responseCallIndex],
+    ).toBeLessThan(releaseLock.mock.invocationCallOrder[0] ?? 0);
+    expect(installSelfUpdateTarball).toHaveBeenCalledOnce();
+  });
+
+  it("restarts after installation when the response socket has closed", async () => {
+    const dataDir = await makeTempDir("bb-host-daemon-app-release-drop-");
+    const fetchRecorder = createFetchRecorder({
+      installProtocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+      installVersion: "9.1.0-test",
+    });
+    const logger = createLogger();
+    const installGate = createDeferredPromise<void>();
+    const installSelfUpdateTarball = vi.fn(() => installGate.promise);
+    const releaseLock = vi.fn(async () => undefined);
+    const socketRef: { current: ReconnectingWebSocketLike | null } = {
+      current: null,
+    };
+    const app = await createHostDaemonApp({
+      autoUpdate: true,
+      currentBbAppVersion: "9.0.0-test",
+      dataDir,
+      serverUrl: "http://127.0.0.1:3334",
+      hostKey: "host-key-release-drop-test",
+      hostType: "persistent",
+      hostId: "host-release-drop-test",
+      hostName: "Release Drop Test Host",
+      instanceId: "instance-release-drop-test",
+      logger,
+      releaseLock,
+      localApiConfig: null,
+      createRuntime: () => createFakeRuntime(),
+      fetchFn: fetchRecorder.fetchFn,
+      installSelfUpdateTarball,
+      createWebSocket: createOpeningWebSocket((socket) => {
+        socketRef.current = socket;
+      }),
+    });
+
+    await app.daemon.start();
+    const socket = socketRef.current;
+    if (!socket) {
+      throw new Error("Expected test socket");
+    }
+    await vi.waitFor(() => {
+      expect(socket.readyState).toBe(1);
+    });
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: "host-rpc.request",
+        requestId: "install-release-drop-test",
+        command: {
+          type: "daemon.install_release",
+          expectedVersion: "9.1.0-test",
+        },
+      }),
+    });
+    await vi.waitFor(() => {
+      expect(installSelfUpdateTarball).toHaveBeenCalledOnce();
+    });
+    socket.close();
+    installGate.resolve(undefined);
+
+    await app.daemon.waitUntilStopped();
+    expect(releaseLock).toHaveBeenCalledOnce();
+    expect(vi.mocked(socket.send)).not.toHaveBeenCalledWith(
+      expect.stringContaining("install-release-drop-test"),
+    );
   });
 
   it("refreshes runtime shell env before provider model listing", async () => {

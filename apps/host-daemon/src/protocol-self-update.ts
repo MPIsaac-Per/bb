@@ -2,7 +2,10 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
-import { HOST_DAEMON_PROTOCOL_VERSION } from "@bb/host-daemon-contract";
+import {
+  HOST_DAEMON_PROTOCOL_VERSION,
+  type DaemonInstallReleaseResult,
+} from "@bb/host-daemon-contract";
 import type { HostDaemonLogger } from "./logger.js";
 import type { FetchFn } from "./server-client.js";
 import { usesSecureInternalFetchTransport } from "./server-client.js";
@@ -21,6 +24,7 @@ interface UpdateAttempt {
   attemptedAt: number;
   attemptCount: number;
   protocolVersion: number;
+  targetVersion?: string;
 }
 
 type ProtocolSelfUpdateResult = "failed" | "skipped" | "updated";
@@ -29,9 +33,12 @@ export interface ProtocolSelfUpdater {
   handleProtocolMismatch(options?: {
     force?: boolean;
   }): Promise<ProtocolSelfUpdateResult>;
+  installServerRelease(options: {
+    expectedVersion: string;
+  }): Promise<DaemonInstallReleaseResult>;
 }
 
-interface ProtocolSelfUpdateInstaller {
+export interface ProtocolSelfUpdateInstaller {
   (tarballPath: string): Promise<void>;
 }
 
@@ -44,6 +51,7 @@ interface SelfUpdateProcessRunner {
 }
 
 interface CreateProtocolSelfUpdaterOptions {
+  currentVersion?: string;
   dataDir: string;
   enabled: boolean;
   logger: HostDaemonLogger;
@@ -94,12 +102,20 @@ async function readLastAttempt(path: string): Promise<UpdateAttempt | null> {
       "protocolVersion" in parsed &&
       typeof parsed.protocolVersion === "number" &&
       Number.isSafeInteger(parsed.protocolVersion) &&
-      parsed.protocolVersion > 0
+      parsed.protocolVersion > 0 &&
+      (!("targetVersion" in parsed) ||
+        (typeof parsed.targetVersion === "string" &&
+          parsed.targetVersion.length > 0))
     ) {
+      const targetVersion =
+        "targetVersion" in parsed && typeof parsed.targetVersion === "string"
+          ? parsed.targetVersion
+          : undefined;
       return {
         attemptedAt: parsed.attemptedAt,
         attemptCount: parsed.attemptCount,
         protocolVersion: parsed.protocolVersion,
+        ...(targetVersion === undefined ? {} : { targetVersion }),
       };
     }
   } catch {}
@@ -167,6 +183,185 @@ export function createProtocolSelfUpdater(
       ));
   const now = options.now ?? Date.now;
   const attemptPath = join(options.dataDir, ATTEMPT_FILE_NAME);
+  let installedVersion: string | null = null;
+  let installReleaseTail = Promise.resolve();
+
+  function requireEnabled(): void {
+    if (!options.enabled) {
+      throw new Error("Daemon release installation requires auto-update");
+    }
+  }
+
+  function requireSecureTransport(): void {
+    if (!usesSecureInternalFetchTransport(options.serverUrl)) {
+      throw new Error(
+        `Refusing daemon release installation over insecure transport: ${options.serverUrl}`,
+      );
+    }
+  }
+
+  function currentVersion(): string {
+    const value =
+      installedVersion ??
+      options.currentVersion?.trim() ??
+      process.env.BB_APP_VERSION?.trim();
+    if (!value) {
+      throw new Error(
+        "Daemon release installation requires the current BB_APP_VERSION",
+      );
+    }
+    return value;
+  }
+
+  async function fetchServerVersion(): Promise<UpdateVersion> {
+    const versionUrl = new URL("/install/version", options.serverUrl);
+    const response = await fetchFn(versionUrl, {
+      cache: "no-store",
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Version check failed: ${response.status} ${response.statusText}`,
+      );
+    }
+    return parseUpdateVersion(await response.json());
+  }
+
+  function requireExpectedServerRelease(
+    server: UpdateVersion,
+    expectedVersion: string,
+  ): void {
+    if (server.version !== expectedVersion) {
+      throw new Error(
+        `Server release changed: expected ${expectedVersion}, received ${server.version}`,
+      );
+    }
+    if (server.protocolVersion < HOST_DAEMON_PROTOCOL_VERSION) {
+      throw new Error(
+        `Server protocol ${server.protocolVersion} is older than daemon protocol ${HOST_DAEMON_PROTOCOL_VERSION}`,
+      );
+    }
+  }
+
+  async function beginAttempt(args: {
+    force: boolean;
+    server: UpdateVersion;
+  }): Promise<
+    | { outcome: "ready" }
+    | {
+        attemptCount: number;
+        outcome: "backing-off";
+        retryAt: number;
+        retryDelayMs: number;
+      }
+  > {
+    await mkdir(options.dataDir, { recursive: true });
+    const attemptedAt = now();
+    const lastAttempt = await readLastAttempt(attemptPath);
+    const previousAttempt =
+      lastAttempt !== null &&
+      lastAttempt.protocolVersion === args.server.protocolVersion &&
+      lastAttempt.targetVersion === args.server.version
+        ? lastAttempt
+        : null;
+    const delayMs =
+      previousAttempt === null ? 0 : retryDelayMs(previousAttempt.attemptCount);
+    const retryAt =
+      previousAttempt === null
+        ? attemptedAt
+        : previousAttempt.attemptedAt + delayMs;
+    if (!args.force && attemptedAt < retryAt) {
+      return {
+        attemptCount: previousAttempt?.attemptCount ?? 0,
+        outcome: "backing-off",
+        retryAt,
+        retryDelayMs: delayMs,
+      };
+    }
+    await writeAttempt(attemptPath, {
+      attemptedAt,
+      attemptCount:
+        args.force || previousAttempt === null
+          ? 1
+          : previousAttempt.attemptCount + 1,
+      protocolVersion: args.server.protocolVersion,
+      targetVersion: args.server.version,
+    });
+    return { outcome: "ready" };
+  }
+
+  async function downloadAndInstall(args: {
+    expectedVersion: string;
+    verifyServerVersion: boolean;
+  }): Promise<void> {
+    const tarballPath = join(
+      options.dataDir,
+      `bb-app-update-${process.pid}.tgz`,
+    );
+    try {
+      const tarballUrl = new URL("/install/bb-app.tgz", options.serverUrl);
+      tarballUrl.searchParams.set("version", args.expectedVersion);
+      const response = await fetchFn(tarballUrl, {
+        cache: "no-store",
+        method: "GET",
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Package download failed: ${response.status} ${response.statusText}`,
+        );
+      }
+      await writeFile(
+        tarballPath,
+        new Uint8Array(await response.arrayBuffer()),
+        { mode: 0o600 },
+      );
+      if (args.verifyServerVersion) {
+        const verifiedServer = await fetchServerVersion();
+        requireExpectedServerRelease(verifiedServer, args.expectedVersion);
+      }
+      await installTarball(tarballPath);
+    } finally {
+      await rm(tarballPath, { force: true });
+    }
+  }
+
+  async function installServerRelease(
+    expectedVersion: string,
+  ): Promise<DaemonInstallReleaseResult> {
+    requireEnabled();
+    requireSecureTransport();
+    const server = await fetchServerVersion();
+    requireExpectedServerRelease(server, expectedVersion);
+    if (currentVersion() === expectedVersion) {
+      return {
+        outcome: "already-current",
+        version: expectedVersion,
+      };
+    }
+    const attempt = await beginAttempt({ force: false, server });
+    if (attempt.outcome === "backing-off") {
+      throw new Error(
+        `Daemon release installation for ${expectedVersion} is backing off until ${attempt.retryAt}`,
+      );
+    }
+    await downloadAndInstall({
+      expectedVersion,
+      verifyServerVersion: true,
+    });
+    installedVersion = expectedVersion;
+    options.logger.info(
+      {
+        daemonProtocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+        serverProtocolVersion: server.protocolVersion,
+        serverVersion: server.version,
+      },
+      "Installed the requested bb-app release.",
+    );
+    return {
+      outcome: "installed",
+      version: expectedVersion,
+    };
+  }
 
   return {
     async handleProtocolMismatch(
@@ -188,14 +383,7 @@ export function createProtocolSelfUpdater(
       }
 
       try {
-        const versionUrl = new URL("/install/version", options.serverUrl);
-        const versionResponse = await fetchFn(versionUrl, { method: "GET" });
-        if (!versionResponse.ok) {
-          throw new Error(
-            `Version check failed: ${versionResponse.status} ${versionResponse.statusText}`,
-          );
-        }
-        const server = parseUpdateVersion(await versionResponse.json());
+        const server = await fetchServerVersion();
         if (server.protocolVersion <= HOST_DAEMON_PROTOCOL_VERSION) {
           options.logger.error(
             {
@@ -210,64 +398,27 @@ export function createProtocolSelfUpdater(
           return "skipped";
         }
 
-        await mkdir(options.dataDir, { recursive: true });
-        const attemptedAt = now();
-        const lastAttempt = await readLastAttempt(attemptPath);
-        const previousAttempt =
-          lastAttempt?.protocolVersion === server.protocolVersion
-            ? lastAttempt
-            : null;
-        const delayMs =
-          previousAttempt === null
-            ? 0
-            : retryDelayMs(previousAttempt.attemptCount);
-        const retryAt =
-          previousAttempt === null
-            ? attemptedAt
-            : previousAttempt.attemptedAt + delayMs;
-        if (!handleOptions.force && attemptedAt < retryAt) {
+        const attempt = await beginAttempt({
+          force: handleOptions.force ?? false,
+          server,
+        });
+        if (attempt.outcome === "backing-off") {
           options.logger.warn(
             {
-              attemptCount: previousAttempt?.attemptCount ?? 0,
-              retryAt,
-              retryDelayMs: delayMs,
+              attemptCount: attempt.attemptCount,
+              retryAt: attempt.retryAt,
+              retryDelayMs: attempt.retryDelayMs,
               serverProtocolVersion: server.protocolVersion,
             },
             "Daemon self-update is backing off; keeping the current daemon running.",
           );
           return "skipped";
         }
-        await writeAttempt(attemptPath, {
-          attemptedAt,
-          attemptCount:
-            handleOptions.force || previousAttempt === null
-              ? 1
-              : previousAttempt.attemptCount + 1,
-          protocolVersion: server.protocolVersion,
+
+        await downloadAndInstall({
+          expectedVersion: server.version,
+          verifyServerVersion: false,
         });
-
-        const tarballPath = join(
-          options.dataDir,
-          `bb-app-update-${process.pid}.tgz`,
-        );
-        try {
-          const tarballUrl = new URL("/install/bb-app.tgz", options.serverUrl);
-          const response = await fetchFn(tarballUrl, { method: "GET" });
-          if (!response.ok) {
-            throw new Error(
-              `Package download failed: ${response.status} ${response.statusText}`,
-            );
-          }
-          await writeFile(
-            tarballPath,
-            new Uint8Array(await response.arrayBuffer()),
-            { mode: 0o600 },
-          );
-          await installTarball(tarballPath);
-        } finally {
-          await rm(tarballPath, { force: true });
-        }
-
         options.logger.info(
           {
             daemonProtocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
@@ -284,6 +435,17 @@ export function createProtocolSelfUpdater(
         );
         return "failed";
       }
+    },
+    installServerRelease({ expectedVersion }) {
+      const task = installReleaseTail.then(
+        () => installServerRelease(expectedVersion),
+        () => installServerRelease(expectedVersion),
+      );
+      installReleaseTail = task.then(
+        () => undefined,
+        () => undefined,
+      );
+      return task;
     },
   };
 }

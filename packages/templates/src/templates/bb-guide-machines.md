@@ -30,6 +30,13 @@ To opt out, remove `--auto-update` from the launchd plist or systemd user unit
 and reload that service. Foreground/manual `bb-app host-daemon` runs leave it off
 unless you pass `--auto-update` explicitly.
 
+For a same-protocol rollout, use `bb machine install-release <id-or-name>
+--version <version>` while the machine is connected. The version must exactly
+match the server's `/install/version`; the daemon installs that server's
+`/install/bb-app.tgz` artifact. A machine already on that version returns
+`already-current` without reinstalling or restarting. This explicit command
+requires automatic updates and secure transport to remain enabled.
+
   bb machine list                         List machines with ID, connection
                                           status, and relative last-seen time
     --json                                Print the raw host list
@@ -37,6 +44,8 @@ unless you pass `--auto-update` explicitly.
   bb machine join-code                    Create a machine pairing code
   bb machine rename <id-or-name> <name>   Rename a machine
   bb machine retry-update <id-or-name>    Retry a pending daemon update now
+  bb machine install-release <id-or-name>  Install the exact server release
+    --version <version>                    Version must match /install/version
   bb machine remove <id-or-name> [--yes]  Revoke and remove a machine
   bb machine provider-cli status <machine>
   bb machine provider-cli install <machine> <claudeCode|codex|cursor>

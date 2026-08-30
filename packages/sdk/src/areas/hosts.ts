@@ -6,6 +6,8 @@ import type {
   HostCloneDefaultPathResponse,
   HostDirectoryListing,
   HostDirectoryQuery,
+  HostInstallReleaseRequest,
+  HostInstallReleaseResponse,
   HostPathsExistRequest,
   HostPathsExistResponse,
   HostPickFolderRequest,
@@ -32,6 +34,10 @@ export interface HostUpdateArgs extends UpdateHostRequest {
 }
 
 export interface HostRetryUpdateArgs {
+  hostId: string;
+}
+
+export interface HostInstallReleaseArgs extends HostInstallReleaseRequest {
   hostId: string;
 }
 
@@ -68,6 +74,7 @@ export type HostDeleteResult = { ok: true };
 export type HostDirectoryResult = HostDirectoryListing;
 export type HostGetResult = Host;
 export type HostCloneDefaultPathResult = HostCloneDefaultPathResponse;
+export type HostInstallReleaseResult = HostInstallReleaseResponse;
 export type HostProviderCliInstallResult = HostProviderCliInstallEvent[];
 export type HostListResult = Host[];
 export type HostPathsExistResult = HostPathsExistResponse;
@@ -84,6 +91,9 @@ export interface HostsArea {
   cloneDefaultPath(
     args: HostCloneDefaultPathArgs,
   ): Promise<HostCloneDefaultPathResult>;
+  installRelease(
+    args: HostInstallReleaseArgs,
+  ): Promise<HostInstallReleaseResult>;
   installProviderCli(
     args: HostProviderCliInstallArgs,
   ): Promise<HostProviderCliInstallResult>;
@@ -141,6 +151,14 @@ export function createHostsArea(args: CreateSdkAreaArgs): HostsArea {
           },
           ...signalRequestArgs(input.signal),
         ),
+      );
+    },
+    async installRelease(input) {
+      return transport.readJson(
+        transport.api.v1.hosts[":id"]["install-release"].$post({
+          param: { id: input.hostId },
+          json: { expectedVersion: input.expectedVersion },
+        }),
       );
     },
     async installProviderCli(input) {

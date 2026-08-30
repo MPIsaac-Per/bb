@@ -454,6 +454,9 @@ describe("thread.stop race semantics", () => {
       fetchProjectAttachment: unexpectedProjectAttachmentFetch,
       fetchPluginHostArtifact: fetchDispatchTestArtifact,
       ...unexpectedProviderMaintenance,
+      installServerRelease: async () => {
+        throw new Error("Unexpected daemon release installation");
+      },
       logger: { debug: () => undefined, warn: () => undefined },
       runtimeManager: harness.manager,
       threadStorageRootPath: "/tmp/bb-stop-race-thread-storage",

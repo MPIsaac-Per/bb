@@ -218,7 +218,10 @@ describe("ServerConnection", () => {
     });
     const { connection } = createConnectionFixture({
       openSessionError: protocolError,
-      protocolSelfUpdater: { handleProtocolMismatch },
+      protocolSelfUpdater: {
+        handleProtocolMismatch,
+        installServerRelease: vi.fn(),
+      },
       onSelfUpdateInstalled,
     });
 
@@ -244,7 +247,10 @@ describe("ServerConnection", () => {
     });
     const { connection } = createConnectionFixture({
       openSessionError: protocolError,
-      protocolSelfUpdater: { handleProtocolMismatch },
+      protocolSelfUpdater: {
+        handleProtocolMismatch,
+        installServerRelease: vi.fn(),
+      },
     });
 
     void connection.start();
@@ -267,7 +273,10 @@ describe("ServerConnection", () => {
     });
     const { connection, webSocket } = createConnectionFixture({
       openSessionError: protocolError,
-      protocolSelfUpdater: { handleProtocolMismatch },
+      protocolSelfUpdater: {
+        handleProtocolMismatch,
+        installServerRelease: vi.fn(),
+      },
       startupTimeoutMs: 100,
     });
 

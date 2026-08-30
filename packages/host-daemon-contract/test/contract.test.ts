@@ -173,6 +173,10 @@ const WORKSPACE_DIFF_AVAILABLE_RESULT: JsonObject = {
 };
 
 const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
+  "daemon.install_release": {
+    outcome: "installed",
+    version: "9.1.0",
+  },
   "plugin.host.call": { output: { ok: true } },
   "plugin.host.cancel": { cancelled: true },
   "plugin.host.dispose": { disposed: true },
@@ -935,8 +939,41 @@ const ACP_BRIDGE_LAUNCH = {
 
 describe("host-daemon command schemas", () => {
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(174);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(175);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
+  });
+
+  it("defines daemon release installation as a non-retryable online RPC", () => {
+    expect(
+      contract.daemonInstallReleaseCommandSchema.parse({
+        type: "daemon.install_release",
+        expectedVersion: "9.1.0",
+      }),
+    ).toEqual({
+      type: "daemon.install_release",
+      expectedVersion: "9.1.0",
+    });
+    expect(
+      contract.daemonInstallReleaseCommandSchema.safeParse({
+        type: "daemon.install_release",
+        expectedVersion: "",
+      }).success,
+    ).toBe(false);
+    expect(
+      contract.daemonInstallReleaseResultSchema.parse({
+        outcome: "already-current",
+        version: "9.1.0",
+      }),
+    ).toEqual({
+      outcome: "already-current",
+      version: "9.1.0",
+    });
+    expect(HOST_DAEMON_ONLINE_RPC_COMMAND_TYPES).toContain(
+      "daemon.install_release",
+    );
+    expect(
+      contract.hostDaemonCommandRegistry["daemon.install_release"].retryable,
+    ).toBe(false);
   });
 
   it("uses relative host-plugin timeouts and bounds artifact declarations", () => {

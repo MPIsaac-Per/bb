@@ -276,6 +276,7 @@ type ExpectedHostsKey =
   | "directory"
   | "get"
   | "installProviderCli"
+  | "installRelease"
   | "list"
   | "pathsExist"
   | "pickFolder"

@@ -17,10 +17,15 @@ const scriptPath = fileURLToPath(import.meta.url);
 const defaultRepository = "MPIsaac-Per/bb";
 const defaultRoot = "/home/michael/.bb-mpiv/worker";
 const defaultWorkflow = "mpiv-build.yml";
+const defaultBbCli = "/home/michael/.npm-global/bin/bb";
+const defaultBbServerUrl = "http://127.0.0.1:38886";
 
-function runCommand(command, args) {
+function runCommand(command, args, options = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      env: options.env ?? process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -96,12 +101,16 @@ export function validateApprovalMarker(options) {
   const marker = parseObject(options.marker, "approval marker");
   const run = parseObject(options.run, "workflow run");
   if (
+    typeof marker.version !== "string" ||
+    typeof marker.sha256 !== "string" ||
+    typeof manifest.version !== "string" ||
+    typeof manifest.artifact?.sha256 !== "string" ||
     marker.runId !== run.id ||
     marker.runAttempt !== run.run_attempt ||
     marker.sourceCommit !== run.head_sha ||
     marker.sourceCommit !== manifest.sourceCommit ||
     marker.version !== manifest.version ||
-    marker.sha256 !== manifest.artifact?.sha256
+    marker.sha256 !== manifest.artifact.sha256
   ) {
     throw new Error("Invalid MPIV approval marker.");
   }
@@ -133,6 +142,148 @@ async function writeState(path, state) {
   const temporaryPath = `${path}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`);
   await rename(temporaryPath, path);
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function parseMachineList(output) {
+  let value;
+  try {
+    value = JSON.parse(output);
+  } catch {
+    throw new Error("Invalid machine list response.");
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("Invalid machine list response.");
+  }
+  return value.map((candidate) => {
+    const machine = parseObject(candidate, "machine list response");
+    if (typeof machine.id !== "string" || typeof machine.status !== "string") {
+      throw new Error("Invalid machine list response.");
+    }
+    return machine;
+  });
+}
+
+function parseInstallReleaseResult(output, expectedVersion) {
+  let value;
+  try {
+    value = parseObject(JSON.parse(output), "install-release response");
+  } catch {
+    throw new Error("Invalid install-release response.");
+  }
+  if (
+    (value.outcome !== "installed" && value.outcome !== "already-current") ||
+    value.version !== expectedVersion
+  ) {
+    throw new Error("Invalid install-release response.");
+  }
+  return value;
+}
+
+function runBbCli(runBb, bbCli, bbServerUrl, args) {
+  return runBb(bbCli, args, {
+    env: {
+      ...process.env,
+      BB_SERVER_URL: bbServerUrl,
+    },
+  });
+}
+
+function hasPendingRollout(state) {
+  return (
+    typeof state.rolloutVersion === "string" &&
+    (state.rolloutEnrollmentPending === true ||
+      (Array.isArray(state.pendingMachineIds) &&
+        state.pendingMachineIds.length > 0))
+  );
+}
+
+export async function processMachineRollout(options) {
+  const state = parseObject(options.state, "worker state");
+  const rolloutVersion = state.rolloutVersion;
+  const pendingMachineIds = state.pendingMachineIds;
+  if (
+    typeof rolloutVersion !== "string" ||
+    !Array.isArray(pendingMachineIds) ||
+    pendingMachineIds.some((id) => typeof id !== "string")
+  ) {
+    throw new Error("Invalid machine rollout state.");
+  }
+  if (
+    state.rolloutEnrollmentPending !== true &&
+    pendingMachineIds.length === 0
+  ) {
+    return state;
+  }
+  const runBb = options.runBb ?? runCommand;
+  const bbCli = options.bbCli ?? process.env.BB_CLI ?? defaultBbCli;
+  const bbServerUrl =
+    options.bbServerUrl ?? process.env.BB_SERVER_URL ?? defaultBbServerUrl;
+  let machines;
+  try {
+    machines = parseMachineList(
+      await runBbCli(runBb, bbCli, bbServerUrl, [
+        "machine",
+        "list",
+        "--json",
+      ]),
+    );
+  } catch (error) {
+    return {
+      ...state,
+      rolloutError: errorMessage(error),
+      rolloutStatus: "pending",
+      status: "rollout-pending",
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  const machinesById = new Map(machines.map((machine) => [machine.id, machine]));
+  const enrolledIds = [...machinesById.keys()];
+  let pending =
+    state.rolloutEnrollmentPending === true
+      ? enrolledIds
+      : pendingMachineIds.filter((id) => machinesById.has(id));
+  const previousFailures = parseObject(
+    state.rolloutFailures ?? {},
+    "machine rollout failures",
+  );
+  const rolloutFailures = Object.fromEntries(
+    Object.entries(previousFailures).filter(([id]) => pending.includes(id)),
+  );
+  for (const machineId of pending) {
+    if (machinesById.get(machineId)?.status !== "connected") {
+      continue;
+    }
+    try {
+      const output = await runBbCli(runBb, bbCli, bbServerUrl, [
+        "machine",
+        "install-release",
+        machineId,
+        "--version",
+        rolloutVersion,
+        "--json",
+      ]);
+      parseInstallReleaseResult(output, rolloutVersion);
+      pending = pending.filter((id) => id !== machineId);
+      delete rolloutFailures[machineId];
+    } catch (error) {
+      rolloutFailures[machineId] = errorMessage(error);
+    }
+  }
+  const rolloutStatus = pending.length === 0 ? "complete" : "pending";
+  return {
+    ...state,
+    pendingMachineIds: pending,
+    rolloutEnrollmentPending: false,
+    rolloutError: null,
+    rolloutFailures,
+    rolloutStatus,
+    status: `rollout-${rolloutStatus}`,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 async function findNamedFile(root, predicate) {
@@ -203,7 +354,11 @@ export async function pollApprovedDeployment(options = {}) {
   const root = resolve(options.root ?? defaultRoot);
   const workflow = options.workflow ?? defaultWorkflow;
   const runGh = options.runGh ?? runCommand;
+  const runBb = options.runBb ?? runCommand;
   const deploy = options.deploy ?? deployMpivHub;
+  const bbCli = options.bbCli ?? process.env.BB_CLI ?? defaultBbCli;
+  const bbServerUrl =
+    options.bbServerUrl ?? process.env.BB_SERVER_URL ?? defaultBbServerUrl;
   const statePath = join(root, "state.json");
   await mkdir(root, { recursive: true });
   const state = await readState(statePath);
@@ -228,16 +383,33 @@ export async function pollApprovedDeployment(options = {}) {
     runs,
   });
   if (!approved) {
-    return { status: "idle" };
+    if (!hasPendingRollout(state)) {
+      return { status: "idle" };
+    }
+    const rolloutState = await processMachineRollout({
+      bbCli,
+      bbServerUrl,
+      runBb,
+      state,
+    });
+    await writeState(statePath, rolloutState);
+    return {
+      pendingMachineIds: rolloutState.pendingMachineIds,
+      rolloutVersion: rolloutState.rolloutVersion,
+      status: rolloutState.status,
+    };
   }
   const key = runKey(approved.run);
   await writeState(statePath, {
+    ...state,
+    deploymentStatus: "deploying",
     lastAttemptedKey: key,
     runId: approved.run.id,
     status: "deploying",
     updatedAt: new Date().toISOString(),
   });
   const stagingRoot = await mkdtemp(join(tmpdir(), "bb-mpiv-worker-"));
+  let result;
   try {
     const releaseDirectory = join(stagingRoot, "release");
     const approvalDirectory = join(stagingRoot, "approval");
@@ -277,33 +449,67 @@ export async function pollApprovedDeployment(options = {}) {
     const manifest = await readJson(manifestPath, "provenance manifest");
     const marker = await readJson(markerPath, "approval marker");
     validateApprovalMarker({ manifest, marker, run: approved.run });
-    const result = await deploy({
+    await writeState(statePath, {
+      ...state,
+      deploymentStatus: "deploying",
+      lastAttemptedKey: key,
+      pendingMachineIds: [],
+      rolloutEnrollmentPending: true,
+      rolloutFailures: {},
+      rolloutStatus: "pending",
+      rolloutVersion: manifest.version,
+      runId: approved.run.id,
+      status: "deploying",
+      updatedAt: new Date().toISOString(),
+    });
+    result = await deploy({
       artifactPath,
       deploy: true,
       local: true,
       manifestPath,
     });
-    await writeState(statePath, {
-      lastAttemptedKey: key,
-      releaseId: result.releaseId,
-      runId: approved.run.id,
-      status: "deployed",
-      updatedAt: new Date().toISOString(),
-      version: result.version,
-    });
-    return { releaseId: result.releaseId, status: "deployed" };
   } catch (error) {
     await writeState(statePath, {
-      error: error instanceof Error ? error.message : String(error),
+      ...state,
+      deploymentStatus: "failed",
+      error: errorMessage(error),
       lastAttemptedKey: key,
       runId: approved.run.id,
-      status: "failed",
+      status: hasPendingRollout(state) ? "rollout-pending" : "deployment-failed",
       updatedAt: new Date().toISOString(),
     });
     throw error;
   } finally {
     await rm(stagingRoot, { force: true, recursive: true });
   }
+  const deployedState = {
+    deploymentStatus: "deployed",
+    lastAttemptedKey: key,
+    pendingMachineIds: [],
+    releaseId: result.releaseId,
+    rolloutEnrollmentPending: true,
+    rolloutFailures: {},
+    rolloutStatus: "pending",
+    rolloutVersion: result.version,
+    runId: approved.run.id,
+    status: "rollout-pending",
+    updatedAt: new Date().toISOString(),
+    version: result.version,
+  };
+  await writeState(statePath, deployedState);
+  const rolloutState = await processMachineRollout({
+    bbCli,
+    bbServerUrl,
+    runBb,
+    state: deployedState,
+  });
+  await writeState(statePath, rolloutState);
+  return {
+    pendingMachineIds: rolloutState.pendingMachineIds,
+    releaseId: result.releaseId,
+    rolloutVersion: rolloutState.rolloutVersion,
+    status: rolloutState.status,
+  };
 }
 
 async function main() {

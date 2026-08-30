@@ -2,6 +2,7 @@ import type {
   HostDaemonCommand,
   HostDaemonOnlineRpcRequestMessage,
   HostDaemonOnlineRpcResponseMessage,
+  HostDaemonRpcCommand,
 } from "@bb/host-daemon-contract";
 import { WorkspaceError } from "@bb/host-workspace";
 import {
@@ -45,7 +46,7 @@ type ThreadStartCommand = Extract<HostDaemonCommand, { type: "thread.start" }>;
 type TurnSubmitCommand = Extract<HostDaemonCommand, { type: "turn.submit" }>;
 
 interface RunRouterCommandArgs {
-  command: HostDaemonCommand;
+  command: HostDaemonRpcCommand;
   requestId: string;
   router: CommandRouter;
 }
@@ -60,6 +61,7 @@ interface CreateTurnSubmitCommandArgs {
 }
 
 interface CreateRouterArgs {
+  installServerRelease?: CommandRouterOptions["installServerRelease"];
   logger?: CommandRouterOptions["logger"];
   resolveInteractiveRequest?: CommandRouterOptions["resolveInteractiveRequest"];
   runtimeManager?: RuntimeManager;
@@ -85,6 +87,11 @@ function createRouter(
     fetchProjectAttachment: unexpectedProjectAttachmentFetch,
     fetchPluginHostArtifact: fetchDispatchTestArtifact,
     ...unexpectedProviderMaintenance,
+    installServerRelease:
+      args.installServerRelease ??
+      (async () => {
+        throw new Error("Unexpected daemon release installation");
+      }),
     logger: {
       debug: () => undefined,
       warn: () => undefined,
@@ -254,6 +261,48 @@ describe("CommandRouter", () => {
       errorMessage: "Workspace provisioning was cancelled",
     });
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("routes daemon release installation results and failures", async () => {
+    const harness = createHarness({ workspacePath: "/tmp/env-router" });
+    const installServerRelease = vi
+      .fn<CommandRouterOptions["installServerRelease"]>()
+      .mockResolvedValueOnce({
+        outcome: "installed",
+        version: "9.1.0",
+      })
+      .mockRejectedValueOnce(new Error("release changed"));
+    const router = createRouter(harness, { installServerRelease });
+    const command = {
+      type: "daemon.install_release" as const,
+      expectedVersion: "9.1.0",
+    };
+
+    await expect(
+      runRouterCommand({
+        command,
+        requestId: "install-release-success",
+        router,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      result: {
+        outcome: "installed",
+        version: "9.1.0",
+      },
+    });
+    await expect(
+      runRouterCommand({
+        command,
+        requestId: "install-release-failure",
+        router,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      errorMessage: "release changed",
+    });
+    expect(installServerRelease).toHaveBeenCalledTimes(2);
+    expect(installServerRelease).toHaveBeenCalledWith(command);
   });
 
   it("orders turn.submit after an in-flight environment destroy", async () => {

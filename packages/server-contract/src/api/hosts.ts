@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { permissionModeSchema } from "@bb/domain";
 import {
+  daemonInstallReleaseCommandSchema,
+  daemonInstallReleaseResultSchema,
+  type DaemonInstallReleaseCommand,
+  type DaemonInstallReleaseResult,
+} from "@bb/host-daemon-contract";
+import {
   pathsExistRequestSchema,
   providerCliInstallEventSchema,
   providerCliInstallRequestSchema,
@@ -80,6 +86,16 @@ export const hostRetryUpdateResponseSchema = z
 export type HostRetryUpdateResponse = z.infer<
   typeof hostRetryUpdateResponseSchema
 >;
+
+export const hostInstallReleaseRequestSchema =
+  daemonInstallReleaseCommandSchema.omit({ type: true });
+export type HostInstallReleaseRequest = Pick<
+  DaemonInstallReleaseCommand,
+  "expectedVersion"
+>;
+
+export const hostInstallReleaseResponseSchema = daemonInstallReleaseResultSchema;
+export type HostInstallReleaseResponse = DaemonInstallReleaseResult;
 
 export const hostPathsExistRequestSchema = pathsExistRequestSchema;
 export type HostPathsExistRequest = PathsExistRequest;

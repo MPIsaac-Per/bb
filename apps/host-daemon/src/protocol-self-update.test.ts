@@ -23,12 +23,16 @@ function logger() {
 
 async function createFixture(
   args: {
+    currentVersion?: string;
+    downloadFailure?: boolean;
     enabled?: boolean;
-    protocolVersion?: number;
     installFailure?: Error;
     now?: () => number;
+    protocolVersion?: number;
     serverUrl?: string;
+    serverVersion?: string;
     useDefaultInstaller?: boolean;
+    verifiedVersion?: string;
   } = {},
 ) {
   const dataDir = await mkdtemp(join(tmpdir(), "bb-self-update-test-"));
@@ -37,22 +41,33 @@ async function createFixture(
     if (args.installFailure) throw args.installFailure;
   });
   const runProcess = vi.fn(async () => undefined);
+  let versionRequestCount = 0;
   const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/install/version")) {
+    const url = new URL(String(input));
+    if (url.pathname === "/install/version") {
+      const version =
+        versionRequestCount === 0
+          ? (args.serverVersion ?? "9.0.0-test")
+          : (args.verifiedVersion ??
+            args.serverVersion ??
+            "9.0.0-test");
+      versionRequestCount += 1;
       return Response.json({
-        version: "9.0.0-test",
+        version,
         protocolVersion:
           args.protocolVersion ?? HOST_DAEMON_PROTOCOL_VERSION + 1,
       });
     }
-    if (url.endsWith("/install/bb-app.tgz")) {
-      return new Response("tarball");
+    if (url.pathname === "/install/bb-app.tgz") {
+      return args.downloadFailure
+        ? new Response("unavailable", { status: 503 })
+        : new Response("tarball");
     }
     throw new Error(`Unexpected URL: ${url}`);
   });
   const testLogger = logger();
   const updater = createProtocolSelfUpdater({
+    currentVersion: args.currentVersion ?? "8.0.0-test",
     dataDir,
     enabled: args.enabled ?? true,
     fetchFn,
@@ -267,8 +282,8 @@ describe("protocol self-update", () => {
     let protocolVersion = HOST_DAEMON_PROTOCOL_VERSION + 1;
     const test = await createFixture({ now: () => now });
     test.fetchFn.mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/install/version")) {
+      const url = new URL(String(input));
+      if (url.pathname === "/install/version") {
         return Response.json({ version: "test", protocolVersion });
       }
       return new Response("tarball");
@@ -281,6 +296,142 @@ describe("protocol self-update", () => {
     await expect(test.updater.handleProtocolMismatch()).resolves.toBe(
       "updated",
     );
+    expect(test.installTarball).toHaveBeenCalledTimes(2);
+  });
+
+  it("installs a same-protocol target once and then reports it current", async () => {
+    const test = await createFixture({
+      protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+      serverVersion: "9.1.0-test",
+    });
+
+    await expect(
+      test.updater.installServerRelease({ expectedVersion: "9.1.0-test" }),
+    ).resolves.toEqual({
+      outcome: "installed",
+      version: "9.1.0-test",
+    });
+    await expect(
+      test.updater.installServerRelease({ expectedVersion: "9.1.0-test" }),
+    ).resolves.toEqual({
+      outcome: "already-current",
+      version: "9.1.0-test",
+    });
+    const tarballRequest = test.fetchFn.mock.calls
+      .map(([input]) => new URL(String(input)))
+      .find((url) => url.pathname === "/install/bb-app.tgz");
+    expect(tarballRequest?.searchParams.get("version")).toBe("9.1.0-test");
+    expect(test.installTarball).toHaveBeenCalledOnce();
+  });
+
+  it("does not download an exact current release", async () => {
+    const test = await createFixture({
+      currentVersion: "9.1.0-test",
+      protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+      serverVersion: "9.1.0-test",
+    });
+
+    await expect(
+      test.updater.installServerRelease({ expectedVersion: "9.1.0-test" }),
+    ).resolves.toEqual({
+      outcome: "already-current",
+      version: "9.1.0-test",
+    });
+    expect(test.fetchFn).toHaveBeenCalledOnce();
+    expect(test.installTarball).not.toHaveBeenCalled();
+  });
+
+  it("rejects a release that changes while its tarball downloads", async () => {
+    const test = await createFixture({
+      protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+      serverVersion: "9.1.0-test",
+      verifiedVersion: "9.2.0-test",
+    });
+
+    await expect(
+      test.updater.installServerRelease({ expectedVersion: "9.1.0-test" }),
+    ).rejects.toThrow(
+      "Server release changed: expected 9.1.0-test, received 9.2.0-test",
+    );
+    expect(test.installTarball).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      args: { enabled: false },
+      expectedError: "requires auto-update",
+      name: "disabled update",
+    },
+    {
+      args: { serverUrl: "http://server.example.test" },
+      expectedError: "insecure transport",
+      name: "insecure transport",
+    },
+    {
+      args: {
+        protocolVersion: HOST_DAEMON_PROTOCOL_VERSION - 1,
+      },
+      expectedError: "older than daemon protocol",
+      name: "older server protocol",
+    },
+  ])("rejects $name", async ({ args, expectedError }) => {
+    const test = await createFixture({
+      ...args,
+      serverVersion: "9.1.0-test",
+    });
+
+    await expect(
+      test.updater.installServerRelease({ expectedVersion: "9.1.0-test" }),
+    ).rejects.toThrow(expectedError);
+    expect(test.installTarball).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      args: { downloadFailure: true },
+      expectedError: "Package download failed: 503",
+      name: "download",
+    },
+    {
+      args: { installFailure: new Error("npm install failed") },
+      expectedError: "npm install failed",
+      name: "install",
+    },
+  ])("exposes $name failures", async ({ args, expectedError }) => {
+    const test = await createFixture({
+      ...args,
+      protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+      serverVersion: "9.1.0-test",
+    });
+
+    await expect(
+      test.updater.installServerRelease({ expectedVersion: "9.1.0-test" }),
+    ).rejects.toThrow(expectedError);
+  });
+
+  it("does not carry backoff across same-protocol target versions", async () => {
+    let serverVersion = "9.1.0-test";
+    const test = await createFixture({
+      installFailure: new Error("npm install failed"),
+      now: () => 40_000,
+      protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+    });
+    test.fetchFn.mockImplementation(async (input: RequestInfo | URL) => {
+      return new URL(String(input)).pathname === "/install/version"
+        ? Response.json({
+            version: serverVersion,
+            protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
+          })
+        : new Response("tarball");
+    });
+
+    await expect(
+      test.updater.installServerRelease({ expectedVersion: serverVersion }),
+    ).rejects.toThrow("npm install failed");
+    serverVersion = "9.2.0-test";
+    await expect(
+      test.updater.installServerRelease({ expectedVersion: serverVersion }),
+    ).rejects.toThrow("npm install failed");
     expect(test.installTarball).toHaveBeenCalledTimes(2);
   });
 });

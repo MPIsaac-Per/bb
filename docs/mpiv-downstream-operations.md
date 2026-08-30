@@ -57,7 +57,7 @@ Version preparation modifies both package manifests in the working tree. Use a d
 
 ## Default Hub Deployment
 
-The default target for every approved `mpiv/prod` build is mpiv-hub. The Hub worker polls GitHub using the Hub's authenticated `gh` CLI, accepts only the newest build with a matching approval marker, and runs the same rollback-first installer locally. It records each attempted run in `/home/michael/.bb-mpiv/worker/state.json` before installation, so a failed release is not retried automatically.
+The default target for every approved `mpiv/prod` build is mpiv-hub. The Hub worker polls GitHub using the Hub's authenticated `gh` CLI, accepts only the newest build with a matching approval marker, and runs the same rollback-first installer locally. It records each attempted run in `/home/michael/.bb-mpiv/worker/state.json` before installation, so a failed Hub release is not retried automatically.
 
 Install or update the worker from a verified `mpiv/prod` checkout:
 
@@ -68,9 +68,13 @@ scp scripts/mpiv-hub/bb-mpiv-deploy-worker.service scripts/mpiv-hub/bb-mpiv-depl
 ssh hub 'systemctl --user daemon-reload && systemctl --user enable --now bb-mpiv-deploy-worker.timer'
 ```
 
-The workflow's `mpiv-production` environment requires Michael's approval under IRR-5. Approval publishes `mpiv-deploy-approved-<run>-<attempt>`, which binds the run, source commit, version, and checksum. Without that exact marker, the worker does nothing.
+The service uses `BB_CLI=/home/michael/.npm-global/bin/bb` and `BB_SERVER_URL=http://127.0.0.1:38886`, ensuring rollout commands use the CLI installed by the exact local Hub deployment against the loopback server. Override either value with a systemd user-unit drop-in only when the Hub installation changes.
 
-Protocol changes update enrolled machines from the Hub's exact `/install/bb-app.tgz`. A disconnected machine updates when it reconnects. A compatible daemon-only change still needs the explicit machine rollout described below.
+The workflow's `mpiv-production` environment requires Michael's approval under IRR-5. Approval publishes `mpiv-deploy-approved-<run>-<attempt>`, which binds the run, source commit, version, and checksum. Without that exact marker, the worker does not deploy a new build, but it still processes an existing machine rollout.
+
+After the Hub deployment succeeds, the worker lists every enrolled machine, writes `rolloutVersion` and `pendingMachineIds`, and calls `bb machine install-release <id> --version <rolloutVersion> --json` for each connected pending machine. State is `rollout-pending` until every enrolled machine is deleted or returns `{ "outcome": "installed" | "already-current", "version": "<rolloutVersion>" }`; it then becomes `rollout-complete`. A newer approved deployment replaces any older pending rollout with the new version and the current enrolled-machine IDs.
+
+Every timer invocation retries pending work even when no new artifact exists. Deleted machines leave the pending set. Disconnected machines remain pending and install on the first timer invocation after they reconnect. A machine-list failure preserves the whole set; a connected machine's command failure or invalid response preserves that machine. Machines configured without daemon auto-update remain pending until auto-update is restored or the machine is deleted. `rolloutError` and `rolloutFailures` record the latest failures in state. These failures do not roll back or mark the successful Hub deployment as failed.
 
 ## Manual Production Plan And Approval
 
@@ -105,9 +109,9 @@ Then create one real thread on the intended machine. That production completion 
 
 ## Runtime Alignment
 
-The default deployment target is mpiv-hub. The Hub server and colocated daemon run the installed downstream package, and the server regenerates `/install/bb-app.tgz` from that exact package. Enrolled daemons update automatically only when a newer server-daemon protocol rejects them. Increment `HOST_DAEMON_PROTOCOL_VERSION` for every wire change, never merely to force a release.
+The default deployment target is mpiv-hub. The Hub server and colocated daemon run the installed downstream package, and the server regenerates `/install/bb-app.tgz` from that exact package. After every approved Hub deployment, the worker explicitly rolls that exact release out to every enrolled machine, including releases whose server-daemon protocol is unchanged. Protocol-incompatible daemons retain their existing mismatch-triggered update behavior.
 
-A daemon-only implementation change with a compatible wire needs a deliberate package update on each affected enrolled machine. Server and web changes do not require that rollout. A desktop-process change requires a separately named, signed MPIV desktop application and update feed; until one is justified, retain the upstream-signed shell.
+Server and web changes therefore reach enrolled machines as part of the same durable rollout even when their daemon code is unchanged. A desktop-process change still requires a separately named, signed MPIV desktop application and update feed; until one is justified, retain the upstream-signed shell.
 
 ## Rollback And Removal
 

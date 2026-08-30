@@ -31,7 +31,7 @@ BB_HOST_DAEMON_PORT only for an intentional non-default target.
 - Read references/configuration.md for settings, agent instructions, skills,
   remote clients, and environment setup scripts.
 - Read references/thread-creation.md before you spawn or fork threads, create
-  projects, select machines, or create environments.
+  projects, select machines, install machine releases, or create environments.
 - Read references/thread-operation.md for messages, queues, interactions,
   panes, terminals, inspection, and long-running commands.
 - Read references/failure-recovery.md when a thread fails, stops, or needs plan

@@ -97,6 +97,26 @@ describe("server skeleton", () => {
     }
   });
 
+  it("rejects a tarball request for a release that is no longer active", async () => {
+    const harness = await createTestAppHarness();
+    const getTarballPath = vi.fn(async () => "/unused");
+    const { app } = createApp(harness.deps, {
+      bbAppArtifactService: {
+        getTarballPath,
+        getVersion: async () => "3.2.1-current",
+      },
+    });
+    try {
+      const response = await app.request(
+        "/install/bb-app.tgz?version=3.2.0-requested",
+      );
+      expect(response.status).toBe(409);
+      expect(getTarballPath).not.toHaveBeenCalled();
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
   it("echoes the launcher's launch id on /health only when one was given", async () => {
     await withTestHarness({ launchId: "launch-123" }, async (harness) => {
       const response = await harness.app.request("/health");

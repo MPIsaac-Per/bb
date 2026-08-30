@@ -14,6 +14,10 @@ interface MachineMutationCommandOptions extends MachineListCommandOptions {
   yes?: boolean;
 }
 
+interface MachineInstallReleaseOptions extends MachineListCommandOptions {
+  version: string;
+}
+
 interface MachineProviderInstallOptions extends MachineListCommandOptions {
   action?: "install" | "update";
 }
@@ -218,6 +222,26 @@ export function registerMachineCommands(
         const result = await sdk.hosts.retryUpdate({ hostId });
         if (outputJson(opts, result)) return;
         console.log(`Machine ${hostId} update retry requested`);
+      }),
+    );
+
+  machine
+    .command("install-release <id-or-name>")
+    .description("Install an exact bb-app release on a connected machine")
+    .requiredOption("--version <version>", "Exact bb-app release version")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (target: string, opts: MachineInstallReleaseOptions) => {
+        const sdk = createCliBbSdk(getUrl());
+        const hostId = resolveMachineId(await sdk.hosts.list(), target);
+        const result = await sdk.hosts.installRelease({
+          hostId,
+          expectedVersion: opts.version,
+        });
+        if (outputJson(opts, result)) return;
+        console.log(
+          `Machine ${hostId} release ${result.version}: ${result.outcome}`,
+        );
       }),
     );
 
