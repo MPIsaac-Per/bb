@@ -1,0 +1,77 @@
+name: Build MPIV Distribution
+
+on:
+  push:
+    branches:
+      - mpiv/prod
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpiv-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build immutable MPIV artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Fetch mirrored upstream branch
+        run: git fetch origin main:refs/remotes/origin/main
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+        with:
+          version: 9.15.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Prepare immutable MPIV version
+        run: node scripts/prepare-mpiv-version.mjs
+
+      - name: Lint
+        run: pnpm exec turbo run lint --output-logs=new-only
+
+      - name: Typecheck and test
+        run: pnpm exec turbo run typecheck test --concurrency=4 --output-logs=new-only
+
+      - name: Smoke tarball
+        run: pnpm exec turbo run smoke:tarball --filter=bb-app --force --output-logs=new-only
+
+      - name: Package artifact and provenance
+        env:
+          BB_MPIV_UPSTREAM_REF: origin/main
+          GITHUB_REF_NAME: mpiv/prod
+        run: node scripts/prepare-mpiv-artifact.mjs .artifacts/mpiv
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Upload immutable artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mpiv-bb-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/mpiv/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summarize build
+        run: |
+          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(".artifacts/mpiv/mpiv-provenance.json","utf8")); process.stdout.write(`## MPIV BB artifact\n\n- version: \`${p.version}\`\n- source: \`${p.sourceCommit}\`\n- upstream base: \`${p.upstreamBase}\`\n- custom commits: \`${p.customCommitCount}\`\n- protocol: \`${p.protocolVersion}\`\n- sha256: \`${p.artifact.sha256}\`\n`)' >> "$GITHUB_STEP_SUMMARY"

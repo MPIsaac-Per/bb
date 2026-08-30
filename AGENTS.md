@@ -1,5 +1,11 @@
 # Codebase Guidelines
 
+## Delivery Standard
+
+- Delivery tier: T2 Live.
+- Follow the canonical MPIV Incremental Delivery Standard v1.1 at `/Users/michaelisaac/mpi-kb/_System/AI_Assistant/20260818082940_MPIV_Incremental_Delivery_Standard.md`.
+- The MPIV downstream distribution contract is [docs/specs/mpiv-downstream-distribution.md](docs/specs/mpiv-downstream-distribution.md).
+
 ## Simplicity First
 
 - When renaming a domain concept, search project-wide for stale names in variables, files, query keys, constants, tests, and docs. TypeScript only catches type references.

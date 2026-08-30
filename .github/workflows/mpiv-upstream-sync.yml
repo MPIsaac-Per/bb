@@ -1,0 +1,119 @@
+name: Sync MPIV With Upstream
+
+on:
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mpiv-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Prepare upstream integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout production branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: mpiv/prod
+
+      - name: Require pull-request automation permission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          allowed="$(gh api "repos/${GITHUB_REPOSITORY}/actions/permissions/workflow" --jq .can_approve_pull_request_reviews)"
+          if [ "$allowed" != "true" ]; then
+            echo "::error::Enable Allow GitHub Actions to create and approve pull requests before running MPIV upstream sync."
+            exit 1
+          fi
+
+      - name: Fetch branches
+        run: |
+          git remote add upstream https://github.com/get-bb/bb.git
+          git fetch upstream main
+          git fetch origin main mpiv/prod automation/upstream-sync || git fetch origin main mpiv/prod
+
+      - name: Mirror upstream main
+        run: |
+          git merge-base --is-ancestor origin/main upstream/main
+          git push origin upstream/main:main
+
+      - name: Prepare integration branch
+        id: integration
+        run: |
+          if git merge-base --is-ancestor upstream/main origin/mpiv/prod; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git show-ref --verify --quiet refs/remotes/origin/automation/upstream-sync \
+            && git merge-base --is-ancestor upstream/main origin/automation/upstream-sync \
+            && git merge-base --is-ancestor origin/mpiv/prod origin/automation/upstream-sync; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "MPIV Upstream Sync"
+          git config user.email "michael@mpiv.ai"
+          git checkout -B automation/upstream-sync origin/mpiv/prod
+          if ! git merge --no-edit --no-ff upstream/main; then
+            git diff --name-only --diff-filter=U >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+          echo "push=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push integration branch
+        if: steps.integration.outputs.push == 'true'
+        run: git push --force-with-lease origin HEAD:automation/upstream-sync
+
+      - name: Create or update draft pull request
+        if: steps.integration.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/mpiv-upstream-pr.md <<'BODY'
+          ## Human comments
+
+          ## What was wrong
+
+          `mpiv/prod` trails the mirrored `get-bb/bb:main`, so the downstream distribution does not yet contain the newest upstream fixes and innovations.
+
+          ## What changed
+
+          This merges the current upstream `main` into `mpiv/prod` through the dedicated integration branch. It does not deploy mpiv-hub. The fork has GitHub Issues disabled, so there is no valid `Fixes #N` target for this recurring maintenance pull request.
+
+          ## How you verified
+
+          The branch merge completed without unresolved conflicts. Normal pull-request CI is the acceptance gate before merge.
+
+          T2 Live. Governed by REV-1, REV-2, SLICE-6, and IRR-5.
+
+          > AGENT GENERATED
+          BODY
+          number="$(gh pr list --head automation/upstream-sync --base mpiv/prod --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "Sync mpiv/prod with upstream main" --body-file /tmp/mpiv-upstream-pr.md
+          else
+            gh pr create --draft --head automation/upstream-sync --base mpiv/prod --title "Sync mpiv/prod with upstream main" --body-file /tmp/mpiv-upstream-pr.md
+          fi
+
+      - name: Summarize current state
+        run: |
+          behind="$(git rev-list --count origin/mpiv/prod..upstream/main)"
+          ahead="$(git rev-list --count upstream/main..origin/mpiv/prod)"
+          {
+            echo "## MPIV upstream drift"
+            echo
+            echo "- upstream commits not in production: \`$behind\`"
+            echo "- downstream commits not upstream: \`$ahead\`"
+            echo "- integration required: \`${{ steps.integration.outputs.needed }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
