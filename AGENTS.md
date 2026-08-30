@@ -5,6 +5,7 @@
 - Delivery tier: T2 Live.
 - Follow the canonical MPIV Incremental Delivery Standard v1.1 at `/Users/michaelisaac/mpi-kb/_System/AI_Assistant/20260818082940_MPIV_Incremental_Delivery_Standard.md`.
 - The MPIV downstream distribution contract is [docs/specs/mpiv-downstream-distribution.md](docs/specs/mpiv-downstream-distribution.md).
+- The current downstream setup handover is [docs/mpiv-downstream-handover-2026-08-30.md](docs/mpiv-downstream-handover-2026-08-30.md); reverify its dated runtime evidence before acting.
 
 ## Simplicity First
 
