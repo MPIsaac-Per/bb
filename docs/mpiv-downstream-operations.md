@@ -37,18 +37,18 @@ Use `--desktop` only for Electron main-process behavior. Server and web changes 
 
 ## Build
 
-Every push to `mpiv/prod` runs `Build MPIV Distribution`. It derives a next-patch version such as `0.40.1-mpiv.123456.1`, runs the repository gates, smoke-tests the package, and uploads:
+Every pull request into `mpiv/prod` runs the repository's full, sharded CI before merge. Every resulting push to `mpiv/prod` runs `Build MPIV Distribution`. It derives a next-patch version such as `0.40.1-mpiv.123456.1`, validates the downstream distribution tooling, smoke-tests the real package, and uploads:
 
 - `bb-app-<version>.tgz`
 - `mpiv-provenance.json`
 
 The manifest binds the artifact checksum to the source commit, upstream merge base, custom commit count, protocol version, and build time. The workflow does not publish to npm and cannot deploy mpiv-hub.
 
-To prepare the same outputs locally after the required Turbo gates and package build:
+To prepare the same outputs locally with the required distribution gates and package build:
 
 ```bash
 GITHUB_RUN_ID=<positive-build-id> GITHUB_RUN_ATTEMPT=1 node scripts/prepare-mpiv-version.mjs
-pnpm exec turbo run typecheck test --concurrency=4 --output-logs=new-only
+pnpm exec turbo run typecheck test --filter=@bb/scripts --concurrency=2 --output-logs=new-only
 pnpm exec turbo run smoke:tarball --filter=bb-app --force --output-logs=new-only
 node scripts/prepare-mpiv-artifact.mjs .artifacts/mpiv
 ```

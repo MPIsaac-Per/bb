@@ -46,11 +46,8 @@ jobs:
       - name: Prepare immutable MPIV version
         run: node scripts/prepare-mpiv-version.mjs
 
-      - name: Build, typecheck, and lint
-        run: pnpm exec turbo run build typecheck lint --concurrency=2 --output-logs=new-only
-
-      - name: Test
-        run: pnpm exec turbo run test --concurrency=2 --output-logs=new-only
+      - name: Validate MPIV distribution tooling
+        run: pnpm exec turbo run typecheck test --filter=@bb/scripts --concurrency=2 --output-logs=new-only
 
       - name: Smoke tarball
         run: pnpm exec turbo run smoke:tarball --filter=bb-app --force --output-logs=new-only

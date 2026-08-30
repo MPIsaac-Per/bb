@@ -259,8 +259,8 @@ describe("MPIV workflows", () => {
     expect(workflow).toContain("mpiv/prod");
     expect(workflow).toContain("prepare-mpiv-version.mjs");
     expect(workflow).toContain("prepare-mpiv-artifact.mjs");
-    expect(workflow).toContain("turbo run build typecheck lint");
-    expect(workflow).toContain("turbo run test");
+    expect(workflow).toContain("turbo run typecheck test --filter=@bb/scripts");
+    expect(workflow).not.toContain("turbo run build typecheck lint");
     expect(workflow).toContain("actions/upload-artifact");
     expect(workflow).not.toContain("npm publish");
     expect(workflow).not.toContain("mpiv-hub-deploy");
