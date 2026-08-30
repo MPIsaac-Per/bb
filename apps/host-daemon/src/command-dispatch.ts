@@ -3,7 +3,6 @@ import {
   type HostDaemonCommand,
   type HostDaemonCommandResult,
   type HostDaemonOnlineRpcCommand,
-  type HostDaemonOnlineRpcCommandType,
   type HostDaemonOnlineRpcResult,
   type HostDaemonSettledCommandType,
   type ProviderCliInstallEvent,
@@ -94,9 +93,16 @@ type CommandHandlerMap = {
   ) => Promise<HostDaemonCommandResult<TType>>;
 };
 
+type DispatchableOnlineRpcCommand = Exclude<
+  HostDaemonOnlineRpcCommand,
+  { type: "daemon.install_release" }
+>;
+type DispatchableOnlineRpcCommandType =
+  DispatchableOnlineRpcCommand["type"];
+
 type OnlineRpcHandlerMap = {
-  [TType in HostDaemonOnlineRpcCommandType]: (
-    command: Extract<HostDaemonOnlineRpcCommand, { type: TType }>,
+  [TType in DispatchableOnlineRpcCommandType]: (
+    command: Extract<DispatchableOnlineRpcCommand, { type: TType }>,
     options: CommandDispatchOptions,
   ) => Promise<HostDaemonOnlineRpcResult<TType>>;
 };
@@ -815,9 +821,9 @@ export async function dispatchCommand<
 }
 
 export async function dispatchOnlineRpcCommand<
-  TType extends HostDaemonOnlineRpcCommandType,
+  TType extends DispatchableOnlineRpcCommandType,
 >(
-  command: Extract<HostDaemonOnlineRpcCommand, { type: TType }>,
+  command: Extract<DispatchableOnlineRpcCommand, { type: TType }>,
   options: CommandDispatchOptions,
 ): Promise<HostDaemonOnlineRpcResult<TType>> {
   try {

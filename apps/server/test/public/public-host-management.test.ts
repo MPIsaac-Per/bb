@@ -15,6 +15,7 @@ import {
 } from "@bb/host-daemon-contract";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { registerHostRpcResponder } from "../helpers/host-rpc.js";
 import { readJson } from "../helpers/json.js";
 import {
   seedEnvironment,
@@ -197,6 +198,14 @@ describe("public host management", () => {
           method: "POST",
           headers: { "x-bb-gate-auth": "machine" },
         }),
+        harness.app.request(`${API}/hosts/${host.id}/install-release`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-bb-gate-auth": "machine",
+          },
+          body: JSON.stringify({ expectedVersion: "1.2.3" }),
+        }),
         harness.app.request(`${API}/hosts/${host.id}/permission-ceiling`, {
           method: "PATCH",
           headers: {
@@ -339,6 +348,90 @@ describe("public host management", () => {
       expect(await readJson(newerDaemon)).toMatchObject({
         code: "host_cannot_self_update",
       });
+    });
+  });
+
+  it("binds an exact release installation to the connected host RPC", async () => {
+    await withTestHarness(async (harness) => {
+      const host = seedHost(harness.deps, { id: "host_install_release" });
+      const session = seedSession(harness.deps, host.id);
+      const responder = registerHostRpcResponder(harness, {
+        hostId: host.id,
+        sessionId: session.id,
+        handle: () => ({
+          ok: true,
+          result: { outcome: "installed", version: "1.2.3" },
+        }),
+      });
+
+      const response = await harness.app.request(
+        `${API}/hosts/${host.id}/install-release`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ expectedVersion: "1.2.3" }),
+        },
+      );
+
+      expect(response.status).toBe(200);
+      expect(await readJson(response)).toEqual({
+        outcome: "installed",
+        version: "1.2.3",
+      });
+      expect(responder.requests).toHaveLength(1);
+      expect(responder.requests[0]?.command).toEqual({
+        type: "daemon.install_release",
+        expectedVersion: "1.2.3",
+      });
+
+      const ignoredField = await harness.app.request(
+        `${API}/hosts/${host.id}/install-release`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expectedVersion: "1.2.3",
+            ignored: true,
+          }),
+        },
+      );
+      expect(ignoredField.status).toBe(400);
+      expect(responder.requests).toHaveLength(1);
+    });
+  });
+
+  it("returns host_unavailable when release installation targets a disconnected host", async () => {
+    await withTestHarness(async (harness) => {
+      const host = seedHost(harness.deps, {
+        id: "host_install_release_disconnected",
+      });
+
+      const response = await harness.app.request(
+        `${API}/hosts/${host.id}/install-release`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ expectedVersion: "1.2.3" }),
+        },
+      );
+
+      expect(response.status).toBe(502);
+      expect(await readJson(response)).toMatchObject({
+        code: "host_unavailable",
+      });
+
+      updateHost(harness.db, harness.hub, host.id, {
+        destroyedAt: Date.now(),
+      });
+      const destroyed = await harness.app.request(
+        `${API}/hosts/${host.id}/install-release`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ expectedVersion: "1.2.3" }),
+        },
+      );
+      expect(destroyed.status).toBe(404);
     });
   });
 

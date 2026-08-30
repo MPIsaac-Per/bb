@@ -62,9 +62,15 @@
   surface that sets it, and machine credentials are refused — so read it from
   `bb machine list --json` or `bb machine show` and ask the user to change it
   in the app.
-- `bb machine show`, `join-code`, `rename`, `retry-update`, and `remove` cover
-  the Settings → Machines lifecycle. Use `bb machine provider-cli
-status|install` to inspect or install provider CLIs on a selected machine.
+- `bb machine show`, `join-code`, `rename`, `retry-update`,
+  `install-release`, and `remove` cover the Settings → Machines lifecycle.
+  `bb machine install-release <id-or-name> --version <version>` targets a
+  connected machine and requires the exact version reported by the server's
+  `/install/version`. It installs the corresponding `/install/bb-app.tgz` only
+  when daemon auto-update and secure transport remain enabled; an
+  already-current daemon avoids reinstall and restart. Use `bb machine
+  provider-cli status|install` to inspect or install provider CLIs on a selected
+  machine.
 - `bb updates` runs the default `bb updates status` action. It aggregates BB and provider
   CLI update state across every machine — the CLI counterpart of Settings →
   Updates. `bb updates apply [--machine <id-or-name>]` runs every available

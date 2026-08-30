@@ -33,6 +33,7 @@ import {
 import { handleHostRemoved } from "../internal/session-owner-side-effects.js";
 
 const PROVIDER_CLI_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
+const RELEASE_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 const FOLDER_PICKER_TIMEOUT_MS = 10 * 60 * 1000;
 
 function providerCliInstallEventsToNdjson(events: readonly unknown[]): string {
@@ -168,6 +169,21 @@ export function registerHostRoutes(
     }
     deps.hub.requestHostProtocolUpdateRetry(hostId);
     return context.json({ ok: true as const });
+  });
+
+  post(routes.installRelease, async (context, payload) => {
+    assertHostManagementAllowed(context);
+    const hostId = context.req.param("id");
+    requireMutableHost(deps, hostId);
+    const result = await callHostOnlineRpc(deps, {
+      hostId,
+      timeoutMs: RELEASE_INSTALL_TIMEOUT_MS,
+      command: {
+        type: "daemon.install_release",
+        expectedVersion: payload.expectedVersion,
+      },
+    });
+    return context.json(result);
   });
 
   del(routes.delete, async (context) => {

@@ -77,6 +77,8 @@ import type {
   EnvironmentPullRequestResponse,
   EnvironmentStatusQuery,
   EnvironmentStatusResponse,
+  HostInstallReleaseRequest,
+  HostInstallReleaseResponse,
   HostDirectoryListing,
   HostDirectoryQuery,
   HostCloneDefaultPathQuery,
@@ -239,6 +241,7 @@ import {
   environmentPathsQuerySchema,
   environmentStatusQuerySchema,
   hostDirectoryQuerySchema,
+  hostInstallReleaseRequestSchema,
   hostCloneDefaultPathQuerySchema,
   hostFileListRequestSchema,
   hostFileReadRequestSchema,
@@ -626,6 +629,14 @@ export const publicApiRoutes = {
       method: "post",
       request: noRequest<PathId>(),
       response: jsonResponse<HostRetryUpdateResponse>(),
+    }),
+    installRelease: defineRoute({
+      path: "/hosts/:id/install-release",
+      method: "post",
+      request: jsonRequest<PathId, HostInstallReleaseRequest>(
+        hostInstallReleaseRequestSchema,
+      ),
+      response: jsonResponse<HostInstallReleaseResponse>(),
     }),
     delete: defineRoute({
       path: "/hosts/:id",

@@ -1,4 +1,6 @@
 import type {
+  DaemonInstallReleaseCommand,
+  DaemonInstallReleaseResult,
   HostDaemonCommand,
   HostDaemonOnlineRpcRequestMessage,
   HostDaemonOnlineRpcResponseMessage,
@@ -62,6 +64,9 @@ interface ReadWriteLaneIdleArgs {
 type CommandRouterTask = Promise<HostDaemonCommandResultForCommand>;
 
 export interface CommandRouterOptions {
+  installServerRelease: (
+    command: DaemonInstallReleaseCommand,
+  ) => Promise<DaemonInstallReleaseResult>;
   dataDir: CommandDispatchOptions["dataDir"];
   fetchProjectAttachment: CommandDispatchOptions["fetchProjectAttachment"];
   fetchSkillTree?: CommandDispatchOptions["fetchSkillTree"];
@@ -157,6 +162,9 @@ export class CommandRouter {
   private executeOnlineRpcCommand(
     command: HostDaemonOnlineRpcCommand,
   ): Promise<HostDaemonOnlineRpcResultForCommand> {
+    if (command.type === "daemon.install_release") {
+      return this.options.installServerRelease(command);
+    }
     if (command.type === "plugin.host.call") {
       if (!this.options.pluginHostManager) {
         return Promise.reject(new Error("host plugin runtime is unavailable"));

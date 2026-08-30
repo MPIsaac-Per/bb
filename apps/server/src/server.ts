@@ -478,6 +478,16 @@ export function createApp(
     });
   });
   app.get("/install/bb-app.tgz", async (context) => {
+    const requestedVersion = context.req.query("version");
+    if (
+      requestedVersion !== undefined &&
+      requestedVersion !== (await bbAppArtifactService.getVersion())
+    ) {
+      return context.text(
+        `Requested bb-app release ${requestedVersion} is not active`,
+        409,
+      );
+    }
     const tarball = await readFile(await bbAppArtifactService.getTarballPath());
     return new Response(tarball, {
       headers: {

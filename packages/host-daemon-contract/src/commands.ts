@@ -1236,6 +1236,16 @@ export const providerUsageResponseSchema = z.record(
 );
 export type ProviderUsageResponse = z.infer<typeof providerUsageResponseSchema>;
 
+export const daemonInstallReleaseCommandSchema = z
+  .object({
+    type: z.literal("daemon.install_release"),
+    expectedVersion: z.string().min(1),
+  })
+  .strict();
+export type DaemonInstallReleaseCommand = z.infer<
+  typeof daemonInstallReleaseCommandSchema
+>;
+
 const providerUsageCommandSchema = z
   .object({
     type: z.literal("provider.usage"),
@@ -1244,6 +1254,16 @@ const providerUsageCommandSchema = z
     cwd: z.string().min(1).optional(),
   })
   .strict();
+
+export const daemonInstallReleaseResultSchema = z
+  .object({
+    outcome: z.enum(["installed", "already-current"]),
+    version: z.string().min(1),
+  })
+  .strict();
+export type DaemonInstallReleaseResult = z.infer<
+  typeof daemonInstallReleaseResultSchema
+>;
 
 const providerCliInstallResultSchema = z
   .object({
@@ -1296,6 +1316,15 @@ function defineHostDaemonCommandDescriptor<
 }
 
 export const hostDaemonCommandRegistry = {
+  "daemon.install_release": defineHostDaemonCommandDescriptor({
+    type: "daemon.install_release",
+    schema: daemonInstallReleaseCommandSchema,
+    resultSchema: daemonInstallReleaseResultSchema,
+    transport: "onlineRpc",
+    retryable: false,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
   "thread.rewind.discard": defineHostDaemonCommandDescriptor({
     type: "thread.rewind.discard",
     schema: threadRewindDiscardCommandSchema,

@@ -127,6 +127,32 @@ describe("@bb/sdk", () => {
     ]);
   });
 
+  it("installs an exact release on a host", async () => {
+    const result = { outcome: "installed" as const, version: "1.2.3" };
+    const queue = createFetchQueue([{ body: result }]);
+    const sdk = createBbSdk({
+      transport: createHttpTransport({
+        baseUrl: "http://bb.test",
+        fetch: queue.fetch,
+        runtime: "node",
+      }),
+    });
+
+    await expect(
+      sdk.hosts.installRelease({
+        hostId: "host_test",
+        expectedVersion: "1.2.3",
+      }),
+    ).resolves.toEqual(result);
+    expect(queue.requests).toEqual([
+      {
+        bodyText: JSON.stringify({ expectedVersion: "1.2.3" }),
+        method: "POST",
+        url: "http://bb.test/api/v1/hosts/host_test/install-release",
+      },
+    ]);
+  });
+
   it("keeps realtime subscriptions distinct under subscribe", () => {
     const queue = createFetchQueue([]);
     const sdk = createBbSdk({

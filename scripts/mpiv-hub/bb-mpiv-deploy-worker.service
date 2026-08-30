@@ -1,10 +1,12 @@
 [Unit]
-Description=Deploy approved MPIV BB builds
+Description=Deploy approved MPIV BB builds and roll them out to machines
 After=network-online.target bb-server.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=BB_CLI=/home/michael/.npm-global/bin/bb
+Environment=BB_SERVER_URL=http://127.0.0.1:38886
 WorkingDirectory=/home/michael/.bb-mpiv/worker
 ExecStart=/usr/bin/node /home/michael/.bb-mpiv/worker/mpiv-hub-worker.mjs

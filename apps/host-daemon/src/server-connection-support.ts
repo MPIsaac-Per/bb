@@ -57,7 +57,7 @@ export interface ServerConnectionOptions {
   machineCredential?: string;
   connectMachineId?: string;
   serverClient: ServerClient;
-  protocolSelfUpdater?: ProtocolSelfUpdater;
+  protocolSelfUpdater?: Pick<ProtocolSelfUpdater, "handleProtocolMismatch">;
   onSelfUpdateInstalled?: () => void | Promise<void>;
   hostId: string;
   hostName: string;

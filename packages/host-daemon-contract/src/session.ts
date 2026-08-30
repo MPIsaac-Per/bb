@@ -402,6 +402,7 @@ function commandRpcResponseSuccessSchemaFor<
 const hostDaemonOnlineRpcResponseSuccessSchema = z.discriminatedUnion(
   "commandType",
   [
+    onlineRpcResponseSuccessSchemaFor("daemon.install_release"),
     onlineRpcResponseSuccessSchemaFor("host.list_files"),
     onlineRpcResponseSuccessSchemaFor("host.list_paths"),
     onlineRpcResponseSuccessSchemaFor("host.mkdir"),

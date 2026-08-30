@@ -70,6 +70,7 @@ This index lists every command path that the core CLI registers. Read the task-s
 - `bb machine rename`
 - `bb machine remove`
 - `bb machine retry-update`
+- `bb machine install-release`
 - `bb machine provider-cli`
 - `bb machine provider-cli status`
 - `bb machine provider-cli install`
