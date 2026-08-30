@@ -15,6 +15,8 @@ name: Mobile E2E
 # exposes the e2e-only affordances, exactly like the local Metro setup.
 on:
   pull_request:
+    branches-ignore:
+      - mpiv/prod
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:

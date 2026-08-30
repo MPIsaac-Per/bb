@@ -33,7 +33,7 @@ Michael uses the MPIV BB fork for daily production work while continuously absor
 1. A repository instruction declares T2 and points future agents to this spec and the canonical delivery standard.
 2. One command derives a unique next-patch `mpiv` prerelease and keeps `bb-app` and desktop package versions in lockstep.
 3. One command packages the exact downstream build and emits a validated provenance manifest beside it.
-4. The build workflow runs from `mpiv/prod`, verifies the relevant Turbo gates, packages the tarball, and uploads the tarball and manifest without publishing to npm.
+4. The build workflow runs one focused `@bb/scripts` typecheck-and-test job on pull requests into `mpiv/prod`; after merge it packages the tarball and uploads the tarball and manifest without publishing to npm.
 5. A scheduled and manually runnable workflow reports upstream drift and opens or updates one integration pull request without deploying it.
 6. The Hub deployment command is non-mutating by default and requires `--deploy` plus an exact artifact and manifest.
 7. A production deployment captures the current package and a consistent SQLite backup before installation, verifies health and version afterward, and automatically restores the captured state when verification fails.
@@ -54,8 +54,8 @@ Michael uses the MPIV BB fork for daily production work while continuously absor
 1. `AGENTS.md:5` — `records the live delivery tier and durable operating contract`
 2. `scripts/prepare-mpiv-version.mjs:23` and `scripts/prepare-mpiv-version.mjs:55` — `derives an immutable next-patch downstream version`, `rejects identifiers that cannot establish release ordering`, and `keeps the server package and desktop shell versions in lockstep`
 3. `scripts/prepare-mpiv-artifact.mjs:63` — `packs the downstream package with commit and protocol provenance`
-4. `.github/workflows/mpiv-build.yml:3` and `.github/workflows/mpiv-build.yml:46` — `builds mpiv/prod without publishing to npm or deploying`
-5. `.github/workflows/mpiv-upstream-sync.yml:3` and `.github/workflows/mpiv-upstream-sync.yml:39` — `prepares one non-deploying upstream integration pull request`
+4. `.github/workflows/mpiv-build.yml:7`, `.github/workflows/mpiv-build.yml:20`, and `.github/workflows/mpiv-build.yml:40` — `runs the focused downstream pull-request gate and builds mpiv/prod without publishing to npm or deploying`
+5. `.github/workflows/mpiv-upstream-sync.yml:3` and `.github/workflows/mpiv-upstream-sync.yml:30` — `prepares one non-deploying upstream integration pull request`
 6. `scripts/mpiv-hub-deploy.mjs:135` and `scripts/mpiv-hub-deploy.mjs:149` — `is non-mutating until the operator passes --deploy`
 7. `scripts/mpiv-hub-deploy.mjs:23` and `scripts/mpiv-hub-deploy.mjs:31` — `uploads one verified release and sends the rollback-first installer`
 8. `docs/mpiv-downstream-operations.md:5`, `docs/mpiv-downstream-operations.md:36`, `docs/mpiv-downstream-operations.md:56`, `docs/mpiv-downstream-operations.md:87`, and `docs/mpiv-downstream-operations.md:93` — `records the live delivery tier and durable operating contract`

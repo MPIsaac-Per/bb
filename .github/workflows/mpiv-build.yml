@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - mpiv/prod
+  pull_request:
+    branches:
+      - mpiv/prod
   workflow_dispatch:
 
 permissions:
@@ -11,10 +14,31 @@ permissions:
 
 concurrency:
   group: mpiv-build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    name: Validate MPIV change
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          node-version: "24"
+          pnpm-version: "9.15.0"
+          cache-prefix: mpiv-pr
+
+      - name: Validate downstream tooling
+        run: pnpm exec turbo run typecheck test --filter=@bb/scripts --concurrency=2 --output-logs=new-only
+
   build:
+    if: github.event_name != 'pull_request'
     name: Build immutable MPIV artifact
     runs-on: ubuntu-latest
     timeout-minutes: 60
