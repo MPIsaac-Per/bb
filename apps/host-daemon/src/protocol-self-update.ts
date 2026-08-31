@@ -328,7 +328,6 @@ export function createProtocolSelfUpdater(
   async function installServerRelease(
     expectedVersion: string,
   ): Promise<DaemonInstallReleaseResult> {
-    requireEnabled();
     requireSecureTransport();
     const server = await fetchServerVersion();
     requireExpectedServerRelease(server, expectedVersion);
@@ -338,6 +337,7 @@ export function createProtocolSelfUpdater(
         version: expectedVersion,
       };
     }
+    requireEnabled();
     const attempt = await beginAttempt({ force: false, server });
     if (attempt.outcome === "backing-off") {
       throw new Error(

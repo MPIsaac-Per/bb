@@ -53,7 +53,7 @@ for attempt in $(seq 1 20); do
 done
 actual_version="$(curl --fail --silent http://127.0.0.1:38886/install/version | node -e 'let body=""; process.stdin.on("data",chunk=>body+=chunk); process.stdin.on("end",()=>process.stdout.write(JSON.parse(body).version))')"
 test "$actual_version" = "$expected_version"
-"$package_prefix/bin/bb" status --json > "$release_dir/bb-status.json"
+env -u BB_CLI -u BB_CLI_REEXEC "$package_prefix/bin/bb" status --json > "$release_dir/bb-status.json"
 node -e 'const fs=require("node:fs"); fs.writeFileSync(process.argv[1], JSON.stringify({status:"deployed",version:process.argv[2],previousVersion:process.argv[3],finishedAt:new Date().toISOString()},null,2)+"\\n")' "$result_path" "$expected_version" "$old_version"
 trap - ERR
 printf '%s\\n' "$actual_version"
