@@ -746,11 +746,19 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   async function listRepositoriesFor(owner: string): Promise<OwnerRepo[]> {
-    const raw = await gh([
-      "repo", "list", owner, "--no-archived",
-      "--limit", String(OWNER_REPO_LIMIT),
-      "--json", "nameWithOwner,pushedAt,isPrivate,isFork",
-    ], 30_000);
+    const raw = await gh(
+      [
+        "repo",
+        "list",
+        owner,
+        "--no-archived",
+        "--limit",
+        String(OWNER_REPO_LIMIT),
+        "--json",
+        "nameWithOwner,pushedAt,isPrivate,isFork",
+      ],
+      30_000,
+    );
     const entries = JSON.parse(raw) as Array<{
       nameWithOwner?: unknown;
       pushedAt?: unknown;
@@ -1828,12 +1836,36 @@ export default async function plugin(bb: BbPluginApi) {
     name: "github",
     summary: "Browse tracked GitHub repos, issues, and PRs",
     commands: [
-      { name: "repos", summary: "List tracked repositories", usage: "bb github repos [--available]" },
-      { name: "track", summary: "Track a repository", usage: "bb github track <owner/repo>" },
-      { name: "untrack", summary: "Stop tracking a repository", usage: "bb github untrack <owner/repo>" },
-      { name: "issues", summary: "List cached open issues", usage: "bb github issues [owner/repo]" },
-      { name: "prs", summary: "List cached open pull requests", usage: "bb github prs [owner/repo]" },
-      { name: "sync", summary: "Refresh the cache from GitHub now", usage: "bb github sync" },
+      {
+        name: "repos",
+        summary: "List tracked repositories",
+        usage: "bb github repos [--available]",
+      },
+      {
+        name: "track",
+        summary: "Track a repository",
+        usage: "bb github track <owner/repo>",
+      },
+      {
+        name: "untrack",
+        summary: "Stop tracking a repository",
+        usage: "bb github untrack <owner/repo>",
+      },
+      {
+        name: "issues",
+        summary: "List cached open issues",
+        usage: "bb github issues [owner/repo]",
+      },
+      {
+        name: "prs",
+        summary: "List cached open pull requests",
+        usage: "bb github prs [owner/repo]",
+      },
+      {
+        name: "sync",
+        summary: "Refresh the cache from GitHub now",
+        usage: "bb github sync",
+      },
     ],
     async run(argv) {
       const [sub, arg] = argv;
@@ -1864,13 +1896,20 @@ export default async function plugin(bb: BbPluginApi) {
             }),
           );
           if (lines.length === 0) {
-            return { exitCode: 0, stdout: "No repositories are visible to the authenticated gh account." };
+            return {
+              exitCode: 0,
+              stdout:
+                "No repositories are visible to the authenticated gh account.",
+            };
           }
           return { exitCode: 0, stdout: lines.join("\n") };
         }
         if (sub === "track" || sub === "untrack") {
           if (!isRepoName(arg)) {
-            return { exitCode: 1, stderr: `Subcommand "${sub}" needs an owner/repo argument.\n${USAGE}` };
+            return {
+              exitCode: 1,
+              stderr: `Subcommand "${sub}" needs an owner/repo argument.\n${USAGE}`,
+            };
           }
           const selected = await updateRepoTracked(arg, sub === "track");
           const { repos, items } = await syncAll(true);

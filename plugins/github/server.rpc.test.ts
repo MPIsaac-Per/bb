@@ -441,7 +441,9 @@ describe("github plugin RPC behavior", () => {
     const { harness } = await loadPlugin();
 
     // Only acme/widgets is tracked to start, through the extraRepos setting.
-    await expect(harness.callRpc("refresh")).resolves.toMatchObject({ repos: 1 });
+    await expect(harness.callRpc("refresh")).resolves.toMatchObject({
+      repos: 1,
+    });
 
     await expect(
       harness.callRpc("listOwners", { refresh: false }),
@@ -450,7 +452,9 @@ describe("github plugin RPC behavior", () => {
         {
           owner: "octocat",
           kind: "user",
-          repos: [{ repo: "octocat/personal-site", tracking: "off", isPrivate: true }],
+          repos: [
+            { repo: "octocat/personal-site", tracking: "off", isPrivate: true },
+          ],
         },
         {
           owner: "acme",
@@ -467,10 +471,15 @@ describe("github plugin RPC behavior", () => {
     });
 
     await expect(
-      harness.callRpc("setRepoTracked", { repo: "acme/gadgets", tracked: true }),
+      harness.callRpc("setRepoTracked", {
+        repo: "acme/gadgets",
+        tracked: true,
+      }),
     ).resolves.toEqual({ ok: true, selected: ["acme/gadgets"] });
 
-    await expect(harness.callRpc("refresh")).resolves.toMatchObject({ repos: 2 });
+    await expect(harness.callRpc("refresh")).resolves.toMatchObject({
+      repos: 2,
+    });
     await expect(
       harness.callRpc("listOwners", { refresh: false }),
     ).resolves.toMatchObject({
@@ -481,9 +490,14 @@ describe("github plugin RPC behavior", () => {
     });
 
     await expect(
-      harness.callRpc("setRepoTracked", { repo: "acme/gadgets", tracked: false }),
+      harness.callRpc("setRepoTracked", {
+        repo: "acme/gadgets",
+        tracked: false,
+      }),
     ).resolves.toEqual({ ok: true, selected: [] });
-    await expect(harness.callRpc("refresh")).resolves.toMatchObject({ repos: 1 });
+    await expect(harness.callRpc("refresh")).resolves.toMatchObject({
+      repos: 1,
+    });
   });
 
   it("reports an unusable extraRepos entry to the picker", async () => {

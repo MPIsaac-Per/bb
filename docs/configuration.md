@@ -800,8 +800,8 @@ accept wildcards. An entry like `owner/*` tracks nothing, is logged as a
 warning, and is called out in the picker. Use the picker to track a whole
 owner's repos.
 
-| Key              | Default | Behavior                                                             |
-| ---------------- | ------- | -------------------------------------------------------------------- |
+| Key              | Default | Behavior                                                              |
+| ---------------- | ------- | --------------------------------------------------------------------- |
 | `extraRepos`     | `""`    | Comma-separated `owner/repo` names to track beyond project checkouts. |
 | `defaultProject` | unset   | Where agent threads spawn for repos with no BB project of their own.  |
 

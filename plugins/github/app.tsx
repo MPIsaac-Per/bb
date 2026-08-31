@@ -613,7 +613,10 @@ function TableFilterMenu({
         >
           {label}
           {count > 0 ? (
-            <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-xs">
+            <Badge
+              variant="secondary"
+              className="h-5 min-w-5 justify-center px-1 text-xs"
+            >
               {count}
             </Badge>
           ) : null}
@@ -640,7 +643,8 @@ function TableFilterMenu({
                     next === true
                       ? [...selected, option.value]
                       : selected.filter(
-                          (value) => value.toLowerCase() !== option.value.toLowerCase(),
+                          (value) =>
+                            value.toLowerCase() !== option.value.toLowerCase(),
                         ),
                   );
                 }}
@@ -657,7 +661,9 @@ function TableFilterMenu({
         {count > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => onChange([])}>Clear {label.toLowerCase()}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onChange([])}>
+              Clear {label.toLowerCase()}
+            </DropdownMenuItem>
           </>
         ) : null}
       </DropdownMenuContent>
@@ -696,13 +702,13 @@ function FilterControls({
       .sort((left, right) => left.localeCompare(right))
       .map((value) => ({ value, label: value }));
   }, [items, parsed.assignees]);
-  const statusOptions = (kind === "pr" ? ["open", "closed", "merged"] : ["open", "closed"]).map(
-    (value) => ({
-      value,
-      label: value[0]!.toUpperCase() + value.slice(1),
-      icon: <StateDot kind={kind} state={value.toUpperCase()} />,
-    }),
-  );
+  const statusOptions = (
+    kind === "pr" ? ["open", "closed", "merged"] : ["open", "closed"]
+  ).map((value) => ({
+    value,
+    label: value[0]!.toUpperCase() + value.slice(1),
+    icon: <StateDot kind={kind} state={value.toUpperCase()} />,
+  }));
   const update = (filter: QueryFilter, values: string[]) => {
     onChange(setQueryFilterValues(query, filter, values));
   };
@@ -710,7 +716,13 @@ function FilterControls({
   return (
     <div className="flex flex-col gap-2 sm:flex-row">
       <div className="min-w-0 flex-1">
-        <FilterBar value={query} onChange={onChange} items={items} repos={repos} kind={kind} />
+        <FilterBar
+          value={query}
+          onChange={onChange}
+          items={items}
+          repos={repos}
+          kind={kind}
+        />
       </div>
       <div className="flex flex-wrap gap-2">
         <TableFilterMenu
@@ -1078,12 +1090,49 @@ function ItemsTable({
   return (
     <div className="@container overflow-hidden rounded-lg border border-border bg-card">
       <div className="hidden items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:flex">
-        <SortHeader label="ID" sortKey="id" className={COL.id} sort={sort} onSort={onSort} />
-        <SortHeader label="Repo" sortKey="repo" className={COL.repo} sort={sort} onSort={onSort} />
-        <SortHeader label="Title" sortKey="title" className="min-w-0 flex-1" sort={sort} onSort={onSort} />
-        <SortHeader label="Assignee" sortKey="assignee" className={COL.assignee} sort={sort} onSort={onSort} />
-        <SortHeader label="Status" sortKey="status" className={COL.status} sort={sort} onSort={onSort} />
-        <SortHeader label="Updated" sortKey="updated" className={COL.updated} sort={sort} onSort={onSort} align="right" />
+        <SortHeader
+          label="ID"
+          sortKey="id"
+          className={COL.id}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Repo"
+          sortKey="repo"
+          className={COL.repo}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Title"
+          sortKey="title"
+          className="min-w-0 flex-1"
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Assignee"
+          sortKey="assignee"
+          className={COL.assignee}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Status"
+          sortKey="status"
+          className={COL.status}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Updated"
+          sortKey="updated"
+          className={COL.updated}
+          sort={sort}
+          onSort={onSort}
+          align="right"
+        />
         <span className={COL.actions} />
       </div>
       {body}
@@ -1128,7 +1177,10 @@ function SortHeader({
         aria-label={accessibleLabel}
       >
         {label}
-        <span aria-hidden="true" className={active ? "text-foreground" : "opacity-40"}>
+        <span
+          aria-hidden="true"
+          className={active ? "text-foreground" : "opacity-40"}
+        >
           {direction === "asc" ? "↑" : direction === "desc" ? "↓" : "↕"}
         </span>
       </button>
@@ -2413,7 +2465,9 @@ const TABLE_SORT_KEYS: TableSortKey[] = [
 
 function storedTableSort(): TableSort {
   try {
-    const stored = JSON.parse(window.localStorage.getItem(SORT_KEY) ?? "null") as {
+    const stored = JSON.parse(
+      window.localStorage.getItem(SORT_KEY) ?? "null",
+    ) as {
       key?: unknown;
       direction?: unknown;
     } | null;
@@ -2452,7 +2506,8 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
     setSort((current) => {
       const next: TableSort = {
         key,
-        direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+        direction:
+          current.key === key && current.direction === "asc" ? "desc" : "asc",
       };
       try {
         window.localStorage.setItem(SORT_KEY, JSON.stringify(next));
@@ -2512,7 +2567,13 @@ function ListView({
   );
   return (
     <>
-      <FilterControls query={query} onChange={setQuery} items={items} repos={repos} kind={kind} />
+      <FilterControls
+        query={query}
+        onChange={setQuery}
+        items={items}
+        repos={repos}
+        kind={kind}
+      />
       <ItemsTable
         kind={kind}
         items={visible}

@@ -7,7 +7,6 @@ import {
   githubRpcContract,
   parseExtraRepos,
   parsePaginatedGhApi,
-  parseExtraRepos,
   validateGithubCliArgs,
 } from "./server";
 
@@ -173,25 +172,6 @@ describe("GitHub RPC contract", () => {
     expect(validateGithubCliArgs(["track", "get-bb/*"])).toContain(
       "expected owner/repo",
     );
-  });
-
-  it("separates trackable extraRepos entries from wildcards and typos", () => {
-    expect(parseExtraRepos("get-bb/bb, owner/other")).toEqual({
-      valid: ["get-bb/bb", "owner/other"],
-      invalid: [],
-    });
-    // A glob parsed to nothing at all, with no warning and no tracked repo.
-    expect(parseExtraRepos("get-bb/*")).toEqual({
-      valid: [],
-      invalid: ["get-bb/*"],
-    });
-    expect(parseExtraRepos("get-bb/bb, get-bb/*, nope")).toEqual({
-      valid: ["get-bb/bb"],
-      invalid: ["get-bb/*", "nope"],
-    });
-    // Blank and separator-only settings are empty, not invalid.
-    expect(parseExtraRepos("")).toEqual({ valid: [], invalid: [] });
-    expect(parseExtraRepos("  ,  ")).toEqual({ valid: [], invalid: [] });
   });
 
   it("infers parsed handler inputs and frontend results", () => {
