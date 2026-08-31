@@ -7,6 +7,15 @@
 - The MPIV downstream distribution contract is [docs/specs/mpiv-downstream-distribution.md](docs/specs/mpiv-downstream-distribution.md).
 - The current downstream setup handover is [docs/mpiv-downstream-handover-2026-08-30.md](docs/mpiv-downstream-handover-2026-08-30.md); reverify its dated runtime evidence before acting.
 
+## Upstream Contribution Discipline
+
+- Before implementation, classify every product change as a generic BB improvement, permanent MPIV policy, or optional integration. Generic improvements are upstream candidates; MPIV distribution, deployment, and policy changes stay downstream.
+- Build a generic improvement on `upstream/<slug>` from `origin/main`, then cherry-pick those generic commits into a branch from `fork/mpiv/prod` for MPIV dogfood. If a generic change already exists downstream, reconstruct the smallest clean commit series on `origin/main`; never merge `mpiv/prod` into an upstream candidate.
+- Never open an upstream pull request from `mpiv/prod`. Exclude MPIV workflows, scripts, docs, deployment behavior, and unrelated downstream commits.
+- Follow upstream `CONTRIBUTING.md`: feature requests and UI changes require an upstream issue and maintainer sign-off before a pull request; bug fixes require a verified reproduction and the repository's issue/PR evidence.
+- After successful MPIV dogfood, push the clean candidate to `fork/upstream/<slug>` and open the pull request against `get-bb/bb:main`. Follow the current upstream pull-request template and append `> AGENT GENERATED`.
+- Follow [docs/mpiv-downstream-operations.md](docs/mpiv-downstream-operations.md#upstream-contributions) for commands and cutover procedure.
+
 ## Simplicity First
 
 - When renaming a domain concept, search project-wide for stale names in variables, files, query keys, constants, tests, and docs. TypeScript only catches type references.

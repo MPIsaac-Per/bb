@@ -12,11 +12,54 @@ Before implementation, classify the work:
 
 Core database changes carry the highest downstream maintenance cost because Drizzle has one linear migration and snapshot chain. Prefer upstreaming generic schema changes. Never renumber or rewrite a migration that has reached mpiv-hub.
 
+## Upstream Contributions
+
+Keep the upstream candidate free of MPIV-only history while dogfooding the same generic change in production.
+
+1. Classify the change before implementation. Generic product behavior is an upstream candidate. MPIV distribution, deployment, and policy remain downstream.
+2. For a feature request or UI change, open an issue against `get-bb/bb` and wait for maintainer sign-off. For a bug fix, capture the verified reproduction and evidence required by `CONTRIBUTING.md` and `docs/filing-issues.md`.
+3. Build the generic commit series from current upstream:
+
+```bash
+git fetch origin main
+git switch -c upstream/<slug> origin/main
+```
+
+Implement and verify only the generic change, then commit it and push the candidate:
+
+```bash
+git push -u fork upstream/<slug>
+```
+
+4. Dogfood the exact generic commits through the downstream release path:
+
+```bash
+git switch -c mpiv/<slug> fork/mpiv/prod
+git cherry-pick <generic-commit>
+git push -u fork mpiv/<slug>
+gh pr create --repo MPIsaac-Per/bb --base mpiv/prod --head mpiv/<slug>
+```
+
+After the downstream pull request passes its slice-specific checks, merge it and approve its exact production artifact under IRR-5. Confirm the behavior on mpiv-hub and representative enrolled machines.
+
+5. After successful dogfood and any required upstream issue sign-off, open the clean upstream pull request:
+
+```bash
+gh pr create \
+  --repo get-bb/bb \
+  --base main \
+  --head MPIsaac-Per:upstream/<slug>
+```
+
+Use the current upstream pull-request template, include the upstream issue link when required, report verification performed against the clean branch, and append `> AGENT GENERATED`. Never merge `mpiv/prod` into the candidate or include `.github/workflows/mpiv-*`, `scripts/mpiv-*`, `docs/mpiv-*`, or other MPIV-only policy.
+
+If the improvement already landed downstream, create `upstream/<slug>` from current `origin/main` and cherry-pick or reconstruct only the generic commits. Resolve dependencies on the clean branch rather than importing downstream history. After upstream merges, consume it through the normal upstream-sync pull request; do not rewrite `mpiv/prod` history.
+
 ## Branches
 
 - `fork/main` mirrors `get-bb/bb:main` and carries no MPIV product commits.
 - `fork/mpiv/prod` names the exact downstream source eligible for production.
-- Feature branches start from and merge into `mpiv/prod`.
+- MPIV-only and downstream dogfood branches start from `mpiv/prod`; clean upstream candidates start from `origin/main`.
 - `automation/upstream-sync` is disposable integration state maintained by the sync workflow.
 
 The daily `Sync MPIV With Upstream` workflow fast-forwards the fork's `main`, prepares one merge branch, and opens or updates a draft pull request against `mpiv/prod`. It never deploys. Resolve conflicts, run the focused downstream PR gate plus the slice-specific checks named in the pull request, and merge only after review.
