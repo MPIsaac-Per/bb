@@ -159,7 +159,18 @@ describe("GitHub RPC contract", () => {
       "Unexpected argument",
     );
     expect(validateGithubCliArgs(["repos", "--json"])).toContain(
+      "accepts only --available",
+    );
+    expect(validateGithubCliArgs(["repos", "--available"])).toBeNull();
+    expect(validateGithubCliArgs(["sync", "--json"])).toContain(
       "does not accept arguments",
+    );
+    expect(validateGithubCliArgs(["track", "get-bb/bb"])).toBeNull();
+    expect(validateGithubCliArgs(["untrack", "get-bb/bb"])).toBeNull();
+    expect(validateGithubCliArgs(["track"])).toContain("needs an owner/repo");
+    // Whole-owner tracking is the picker's job, not a wildcard's.
+    expect(validateGithubCliArgs(["track", "get-bb/*"])).toContain(
+      "expected owner/repo",
     );
   });
 

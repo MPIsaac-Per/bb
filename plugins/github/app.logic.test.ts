@@ -5,6 +5,8 @@ import {
   parseQuery,
   parseSubPath,
   routeToSubPath,
+  setQueryFilterValues,
+  sortItems,
   type Item,
   type Route,
 } from "./app-logic.js";
@@ -122,5 +124,75 @@ describe("github panel query engine", () => {
     expect(
       buildSuggestions("author:ali", vocab, "issue", "octocat")[0]?.icon,
     ).toEqual({ kind: "avatar", login: "alice" });
+  });
+
+  it("replaces one structured filter without disturbing the rest of the query", () => {
+    expect(
+      setQueryFilterValues(
+        'is:open state:closed author:alice "cache miss" repo:old/widgets',
+        "repo",
+        ["acme/widgets", "mpiv/control plane"],
+      ),
+    ).toBe(
+      'is:open state:closed author:alice "cache miss" repo:acme/widgets repo:"mpiv/control plane" ',
+    );
+    expect(
+      setQueryFilterValues("is:open label:bug", "status", ["closed", "merged"]),
+    ).toBe("label:bug is:closed is:merged ");
+    expect(
+      setQueryFilterValues("assignee:alice author:bob", "assignee", []),
+    ).toBe("author:bob ");
+  });
+
+  it("sorts every visible table column without mutating the source rows", () => {
+    const rows: Item[] = [
+      issue,
+      {
+        ...issue,
+        repo: "mpiv/control-plane",
+        number: 2,
+        title: "Add alerts",
+        state: "CLOSED",
+        assignees: ["alice"],
+        updatedAt: "2026-08-21T12:00:00Z",
+      },
+      {
+        ...issue,
+        repo: "acme/api",
+        number: 19,
+        title: "Review webhooks",
+        state: "MERGED",
+        assignees: [],
+        updatedAt: "2026-08-20T12:00:00Z",
+      },
+    ];
+
+    expect(
+      sortItems(rows, { key: "id", direction: "asc" }).map((row) => row.number),
+    ).toEqual([2, 7, 19]);
+    expect(
+      sortItems(rows, { key: "repo", direction: "asc" }).map((row) => row.repo),
+    ).toEqual(["acme/api", "acme/widgets", "mpiv/control-plane"]);
+    expect(
+      sortItems(rows, { key: "title", direction: "asc" }).map(
+        (row) => row.title,
+      ),
+    ).toEqual(["Add alerts", "Fix cache invalidation", "Review webhooks"]);
+    expect(
+      sortItems(rows, { key: "assignee", direction: "asc" }).map(
+        (row) => row.assignees[0] ?? "",
+      ),
+    ).toEqual(["", "alice", "octocat"]);
+    expect(
+      sortItems(rows, { key: "status", direction: "asc" }).map(
+        (row) => row.state,
+      ),
+    ).toEqual(["CLOSED", "MERGED", "OPEN"]);
+    expect(
+      sortItems(rows, { key: "updated", direction: "desc" }).map(
+        (row) => row.number,
+      ),
+    ).toEqual([2, 19, 7]);
+    expect(rows[0]).toBe(issue);
   });
 });

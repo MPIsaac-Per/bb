@@ -7,6 +7,7 @@ import {
   useBbNavigate,
   useRealtime,
   useRpc,
+  useSettings,
   type PluginNavPanelProps,
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
@@ -16,15 +17,27 @@ import {
   parseQuery,
   parseSubPath,
   routeToSubPath,
+  setQueryFilterValues,
+  sortItems,
   type Item,
+  type QueryFilter,
   type Route,
   type Suggestion,
   type SuggestionIcon,
+  type TableSort,
+  type TableSortKey,
 } from "./app-logic.js";
 import type { githubRpcContract } from "./server.js";
 import { toast } from "sonner";
 import { Badge } from "@bb/shared-ui/badge";
 import { Button } from "@bb/shared-ui/button";
+import { Checkbox } from "@bb/shared-ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@bb/shared-ui/collapsible";
+import { Icon } from "@bb/shared-ui/icon";
 import { DelayedLoading } from "@bb/shared-ui/delayed-loading";
 import {
   DropdownMenu,
@@ -569,14 +582,194 @@ function FilterBar({
   );
 }
 
+interface FilterOption {
+  value: string;
+  label: string;
+  icon?: React.ReactNode;
+}
+
+function TableFilterMenu({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: FilterOption[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const selectedSet = new Set(selected.map((value) => value.toLowerCase()));
+  const count = selectedSet.size;
+  const accessibleLabel = `${label} filter${count === 0 ? "" : `, ${count} selected`}`;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant={count === 0 ? "outline" : "secondary"}
+          className="h-9 gap-1.5 px-2.5 font-normal"
+          aria-label={accessibleLabel}
+        >
+          {label}
+          {count > 0 ? (
+            <Badge
+              variant="secondary"
+              className="h-5 min-w-5 justify-center px-1 text-xs"
+            >
+              {count}
+            </Badge>
+          ) : null}
+          <ChevronDownIcon />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="max-h-72 min-w-52 overflow-y-auto"
+        mobileTitle={`${label} filter`}
+      >
+        <DropdownMenuLabel>{label}</DropdownMenuLabel>
+        {options.length === 0 ? (
+          <DropdownMenuItem disabled>No options</DropdownMenuItem>
+        ) : (
+          options.map((option) => {
+            const checked = selectedSet.has(option.value.toLowerCase());
+            return (
+              <DropdownMenuCheckboxItem
+                key={option.value}
+                checked={checked}
+                onCheckedChange={(next) => {
+                  onChange(
+                    next === true
+                      ? [...selected, option.value]
+                      : selected.filter(
+                          (value) =>
+                            value.toLowerCase() !== option.value.toLowerCase(),
+                        ),
+                  );
+                }}
+                onSelect={(event) => event.preventDefault()}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {option.icon}
+                  <span className="truncate">{option.label}</span>
+                </span>
+              </DropdownMenuCheckboxItem>
+            );
+          })
+        )}
+        {count > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onChange([])}>
+              Clear {label.toLowerCase()}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function FilterControls({
+  query,
+  onChange,
+  items,
+  repos,
+  kind,
+}: {
+  query: string;
+  onChange: (value: string) => void;
+  items: Item[] | null;
+  repos: RepoInfo[];
+  kind: "issue" | "pr";
+}) {
+  const parsed = useMemo(() => parseQuery(query), [query]);
+  const repoOptions = useMemo(() => {
+    const values = new Set(repos.map((entry) => entry.repo));
+    for (const item of items ?? []) values.add(item.repo);
+    for (const repo of parsed.repos) values.add(repo);
+    return [...values]
+      .sort((left, right) => left.localeCompare(right))
+      .map((value) => ({ value, label: value }));
+  }, [items, parsed.repos, repos]);
+  const assigneeOptions = useMemo(() => {
+    const values = new Set(parsed.assignees);
+    for (const item of items ?? []) {
+      for (const assignee of item.assignees) values.add(assignee);
+    }
+    return [...values]
+      .sort((left, right) => left.localeCompare(right))
+      .map((value) => ({ value, label: value }));
+  }, [items, parsed.assignees]);
+  const statusOptions = (
+    kind === "pr" ? ["open", "closed", "merged"] : ["open", "closed"]
+  ).map((value) => ({
+    value,
+    label: value[0]!.toUpperCase() + value.slice(1),
+    icon: <StateDot kind={kind} state={value.toUpperCase()} />,
+  }));
+  const update = (filter: QueryFilter, values: string[]) => {
+    onChange(setQueryFilterValues(query, filter, values));
+  };
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="min-w-0 flex-1">
+        <FilterBar
+          value={query}
+          onChange={onChange}
+          items={items}
+          repos={repos}
+          kind={kind}
+        />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <TableFilterMenu
+          label="Repo"
+          options={repoOptions}
+          selected={parsed.repos}
+          onChange={(values) => update("repo", values)}
+        />
+        <TableFilterMenu
+          label="Assignee"
+          options={assigneeOptions}
+          selected={parsed.assignees}
+          onChange={(values) => update("assignee", values)}
+        />
+        <TableFilterMenu
+          label="Status"
+          options={statusOptions}
+          selected={parsed.states.map((state) => state.toLowerCase())}
+          onChange={(values) => update("status", values)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The list: a column-headed table.
+// ---------------------------------------------------------------------------
+
+// Shared column widths so the header row lines up with item rows. The table
+// switches modes against its own width, not the browser viewport.
 const COL = {
   id: "shrink-0 @[48rem]:w-12",
+  repo: "hidden shrink-0 truncate @[48rem]:block @[48rem]:w-24 @[60rem]:w-32",
   assignee: "shrink-0 @[48rem]:w-20",
   status: "shrink-0 @[48rem]:w-24",
   updated: "hidden w-14 shrink-0 text-right @[48rem]:block",
   actions:
     "ml-auto flex shrink-0 items-center justify-end gap-1 @[48rem]:ml-0 @[48rem]:w-24",
 } as const;
+
+/** "owner/name" → "name". The owner is the same for most rows and costs the
+    width the title needs; the full name stays in the cell's title attribute. */
+function repoShortName(repo: string): string {
+  const slash = repo.indexOf("/");
+  return slash === -1 ? repo : repo.slice(slash + 1);
+}
 
 function AssigneeCell({ assignees }: { assignees: string[] }) {
   if (assignees.length === 0) {
@@ -735,7 +928,10 @@ function ItemRow({
       onClick={onOpen}
     >
       <span className="flex min-w-0 flex-col items-start gap-1.5 @[48rem]:order-2 @[48rem]:flex-1 @[48rem]:flex-row @[48rem]:items-center @[48rem]:gap-2">
-        <span className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal">
+        <span
+          className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal"
+          data-testid="github-item-title"
+        >
           {item.title}
         </span>
         <LabelChips
@@ -749,6 +945,12 @@ function ItemRow({
           className={`${COL.id} font-mono text-xs text-muted-foreground @[48rem]:order-1`}
         >
           #{item.number}
+        </span>
+        <span
+          className={`${COL.repo} text-xs text-muted-foreground @[48rem]:order-1`}
+          title={item.repo}
+        >
+          {repoShortName(item.repo)}
         </span>
         <span
           className={`${COL.assignee} ${item.assignees.length === 0 ? "hidden @[48rem]:flex" : "flex"} text-xs text-muted-foreground @[48rem]:order-3`}
@@ -801,6 +1003,9 @@ function TableSkeleton() {
               <span className={`${COL.id} @[48rem]:order-1`}>
                 <Skeleton className="h-3 w-10" />
               </span>
+              <span className={`${COL.repo} @[48rem]:order-1`}>
+                <Skeleton className="h-3 w-20" />
+              </span>
               <span className={`${COL.assignee} flex @[48rem]:order-3`}>
                 <Skeleton className="size-5 rounded-full @[48rem]:h-3 @[48rem]:w-16" />
               </span>
@@ -838,12 +1043,16 @@ function ItemsTable({
   items,
   error,
   hasFilter,
+  sort,
+  onSort,
   onOpenItem,
 }: {
   kind: "issue" | "pr";
   items: Item[] | null;
   error: string | null;
   hasFilter: boolean;
+  sort: TableSort;
+  onSort: (key: TableSortKey) => void;
   onOpenItem: (repo: string, number: number) => void;
 }) {
   const links = useLinks();
@@ -881,17 +1090,107 @@ function ItemsTable({
   return (
     <div className="@container overflow-hidden rounded-lg border border-border bg-card">
       <div className="hidden items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:flex">
-        <span className={COL.id}>ID</span>
-        <span className="min-w-0 flex-1">Title</span>
-        <span className={COL.assignee}>Assignee</span>
-        <span className={COL.status}>Status</span>
-        <span className={COL.updated}>Updated</span>
+        <SortHeader
+          label="ID"
+          sortKey="id"
+          className={COL.id}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Repo"
+          sortKey="repo"
+          className={COL.repo}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Title"
+          sortKey="title"
+          className="min-w-0 flex-1"
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Assignee"
+          sortKey="assignee"
+          className={COL.assignee}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Status"
+          sortKey="status"
+          className={COL.status}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          label="Updated"
+          sortKey="updated"
+          className={COL.updated}
+          sort={sort}
+          onSort={onSort}
+          align="right"
+        />
         <span className={COL.actions} />
       </div>
       {body}
     </div>
   );
 }
+
+function SortHeader({
+  label,
+  sortKey,
+  className,
+  sort,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  sortKey: TableSortKey;
+  className: string;
+  sort: TableSort;
+  onSort: (key: TableSortKey) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort.key === sortKey;
+  const direction = active ? sort.direction : null;
+  const accessibleLabel = `Sort by ${label}${direction === null ? "" : `, ${direction === "asc" ? "ascending" : "descending"}`}`;
+  return (
+    <span
+      role="columnheader"
+      className={className}
+      aria-sort={
+        direction === null
+          ? "none"
+          : direction === "asc"
+            ? "ascending"
+            : "descending"
+      }
+    >
+      <button
+        type="button"
+        className={`flex w-full items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${align === "right" ? "justify-end" : "justify-start"}`}
+        onClick={() => onSort(sortKey)}
+        aria-label={accessibleLabel}
+      >
+        {label}
+        <span
+          aria-hidden="true"
+          className={active ? "text-foreground" : "opacity-40"}
+        >
+          {direction === "asc" ? "↑" : direction === "desc" ? "↓" : "↕"}
+        </span>
+      </button>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Issue detail: body + comments on the left, metadata sidebar on the right.
+// ---------------------------------------------------------------------------
 
 function SidebarHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -2152,7 +2451,39 @@ function PanelHeader() {
 }
 
 const QUERY_KEY = "bb-plugin-github:query";
+const SORT_KEY = "bb-plugin-github:sort:v1";
 const DEFAULT_QUERY = "is:open ";
+const DEFAULT_SORT: TableSort = { key: "updated", direction: "desc" };
+const TABLE_SORT_KEYS: TableSortKey[] = [
+  "id",
+  "repo",
+  "title",
+  "assignee",
+  "status",
+  "updated",
+];
+
+function storedTableSort(): TableSort {
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(SORT_KEY) ?? "null",
+    ) as {
+      key?: unknown;
+      direction?: unknown;
+    } | null;
+    if (
+      stored !== null &&
+      typeof stored.key === "string" &&
+      TABLE_SORT_KEYS.includes(stored.key as TableSortKey) &&
+      (stored.direction === "asc" || stored.direction === "desc")
+    ) {
+      return { key: stored.key as TableSortKey, direction: stored.direction };
+    }
+  } catch {
+    // Ignore malformed or unavailable local storage.
+  }
+  return DEFAULT_SORT;
+}
 
 function GithubPanel({ subPath }: PluginNavPanelProps) {
   const [route, navigate] = useSubPathRoute(subPath);
@@ -2170,6 +2501,22 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
       window.localStorage.setItem(QUERY_KEY, next);
     } catch {}
   }, []);
+  const [sort, setSort] = useState<TableSort>(storedTableSort);
+  const setSortKey = useCallback((key: TableSortKey) => {
+    setSort((current) => {
+      const next: TableSort = {
+        key,
+        direction:
+          current.key === key && current.direction === "asc" ? "desc" : "asc",
+      };
+      try {
+        window.localStorage.setItem(SORT_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore unavailable local storage.
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
@@ -2180,6 +2527,8 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
           status={status}
           query={query}
           setQuery={setQuery}
+          sort={sort}
+          setSortKey={setSortKey}
         />
       </div>
     </div>
@@ -2191,28 +2540,35 @@ function ListView({
   query,
   setQuery,
   repos,
+  sort,
+  setSortKey,
   onOpenItem,
 }: {
   kind: "issue" | "pr";
   query: string;
   setQuery: (query: string) => void;
   repos: RepoInfo[];
+  sort: TableSort;
+  setSortKey: (key: TableSortKey) => void;
   onOpenItem: (repo: string, number: number) => void;
 }) {
   const { items, error } = useItems(kind);
   const viewer = useViewer();
   const parsed = useMemo(() => parseQuery(query), [query]);
-  const filtered = useMemo(
+  const visible = useMemo(
     () =>
       items === null
         ? null
-        : items.filter((item) => matchesQuery(item, parsed, viewer)),
-    [items, parsed, viewer],
+        : sortItems(
+            items.filter((item) => matchesQuery(item, parsed, viewer)),
+            sort,
+          ),
+    [items, parsed, sort, viewer],
   );
   return (
     <>
-      <FilterBar
-        value={query}
+      <FilterControls
+        query={query}
         onChange={setQuery}
         items={items}
         repos={repos}
@@ -2220,9 +2576,11 @@ function ListView({
       />
       <ItemsTable
         kind={kind}
-        items={filtered}
+        items={visible}
         error={error}
         hasFilter={query.trim().length > 0}
+        sort={sort}
+        onSort={setSortKey}
         onOpenItem={onOpenItem}
       />
     </>
@@ -2235,12 +2593,16 @@ function GithubPanelBody({
   status,
   query,
   setQuery,
+  sort,
+  setSortKey,
 }: {
   route: Route;
   navigate: (route: Route) => void;
   status: Status | null;
   query: string;
   setQuery: (query: string) => void;
+  sort: TableSort;
+  setSortKey: (key: TableSortKey) => void;
 }) {
   const openItem = useCallback(
     (itemKind: "issue" | "pr", repo: string, number: number) => {
@@ -2336,6 +2698,8 @@ function GithubPanelBody({
         query={query}
         setQuery={setQuery}
         repos={status?.repos ?? []}
+        sort={sort}
+        setSortKey={setSortKey}
         onOpenItem={(repo, number) =>
           openItem(kind === "pr" ? "pr" : "issue", repo, number)
         }
@@ -2344,7 +2708,294 @@ function GithubPanelBody({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Settings: pick which repos feed the Issues and Pull requests tabs.
+// ---------------------------------------------------------------------------
+
+interface OwnerRepoEntry {
+  repo: string;
+  pushedAt: string;
+  isPrivate: boolean;
+  isFork: boolean;
+  tracking: "project" | "selected" | "extra" | "off";
+}
+
+interface OwnerEntry {
+  owner: string;
+  kind: "user" | "organization";
+  repos: OwnerRepoEntry[];
+}
+
+/** Why a locked checkbox cannot be turned off, phrased for the settings page. */
+function lockReason(tracking: OwnerRepoEntry["tracking"]): string | null {
+  if (tracking === "project")
+    return "Tracked because a BB project checkout points at it";
+  if (tracking === "extra") return "Tracked by the extraRepos setting below";
+  return null;
+}
+
+function RepoRow({
+  entry,
+  busy,
+  onToggle,
+}: {
+  entry: OwnerRepoEntry;
+  busy: boolean;
+  onToggle: (tracked: boolean) => void;
+}) {
+  const locked = lockReason(entry.tracking);
+  const checked = entry.tracking !== "off";
+  return (
+    <label
+      className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+        locked === null ? "cursor-pointer hover:bg-accent/50" : "cursor-default"
+      }`}
+    >
+      <Checkbox
+        checked={checked}
+        disabled={locked !== null || busy}
+        onCheckedChange={(next) => onToggle(next === true)}
+      />
+      <span className="min-w-0 flex-1 truncate">
+        {entry.repo.slice(entry.repo.indexOf("/") + 1)}
+      </span>
+      {entry.isPrivate ? (
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          Private
+        </Badge>
+      ) : null}
+      {entry.isFork ? (
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          Fork
+        </Badge>
+      ) : null}
+      {locked !== null ? (
+        <span className="shrink-0 text-xs text-muted-foreground">{locked}</span>
+      ) : null}
+      <span className="w-14 shrink-0 text-right text-xs text-muted-foreground">
+        {entry.pushedAt === "" ? "" : relativeTime(entry.pushedAt)}
+      </span>
+    </label>
+  );
+}
+
+function OwnerGroup({
+  owner,
+  filter,
+  busyRepo,
+  onToggle,
+}: {
+  owner: OwnerEntry;
+  filter: string;
+  busyRepo: string | null;
+  onToggle: (repo: string, tracked: boolean) => void;
+}) {
+  const needle = filter.trim().toLowerCase();
+  const repos = useMemo(
+    () =>
+      needle === ""
+        ? owner.repos
+        : owner.repos.filter((entry) =>
+            entry.repo.toLowerCase().includes(needle),
+          ),
+    [owner.repos, needle],
+  );
+  const trackedCount = owner.repos.filter(
+    (entry) => entry.tracking !== "off",
+  ).length;
+  // Open the groups the user is already using, and any group a search matches.
+  const [open, setOpen] = useState(trackedCount > 0);
+  const expanded = needle === "" ? open : true;
+  if (repos.length === 0) return null;
+  return (
+    <Collapsible open={expanded} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium hover:bg-accent/50">
+        <Icon
+          name="ChevronRight"
+          className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`}
+        />
+        <span className="min-w-0 flex-1 truncate text-left">{owner.owner}</span>
+        <span className="shrink-0 text-xs font-normal text-muted-foreground">
+          {owner.kind === "user" ? "Your account" : "Organization"} ·{" "}
+          {trackedCount} of {owner.repos.length}
+        </span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="pl-5">
+          {repos.map((entry) => (
+            <RepoRow
+              key={entry.repo}
+              entry={entry}
+              busy={busyRepo === entry.repo}
+              onToggle={(tracked) => onToggle(entry.repo, tracked)}
+            />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function RepoPickerSettings() {
+  const rpc = useRpc<typeof githubRpcContract>();
+  const settings = useSettings();
+  const [owners, setOwners] = useState<OwnerEntry[] | null>(null);
+  const [invalidExtraRepos, setInvalidExtraRepos] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+  const [busyRepo, setBusyRepo] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(
+    (refresh: boolean) => {
+      setError(null);
+      return rpc.call("listOwners", { refresh }).then(
+        (result) => {
+          const payload = result as {
+            owners?: OwnerEntry[];
+            invalidExtraRepos?: string[];
+          };
+          setOwners(payload.owners ?? []);
+          setInvalidExtraRepos(payload.invalidExtraRepos ?? []);
+        },
+        (cause: unknown) => {
+          setOwners([]);
+          setError(errorText(cause));
+        },
+      );
+    },
+    [rpc],
+  );
+
+  useEffect(() => {
+    void load(false);
+  }, [load]);
+
+  const toggle = useCallback(
+    (repo: string, tracked: boolean) => {
+      setBusyRepo(repo);
+      // Optimistic: the checkbox should not lag a round-trip behind the click.
+      setOwners((current) =>
+        current === null
+          ? current
+          : current.map((owner) => ({
+              ...owner,
+              repos: owner.repos.map((entry) =>
+                entry.repo === repo
+                  ? {
+                      ...entry,
+                      tracking: tracked
+                        ? ("selected" as const)
+                        : ("off" as const),
+                    }
+                  : entry,
+              ),
+            })),
+      );
+      rpc.call("setRepoTracked", { repo, tracked }).then(
+        () => setBusyRepo(null),
+        (cause: unknown) => {
+          setBusyRepo(null);
+          toast.error(errorText(cause));
+          void load(false);
+        },
+      );
+    },
+    [rpc, load],
+  );
+
+  const selectedWithoutProject = useMemo(
+    () =>
+      (owners ?? []).some((owner) =>
+        owner.repos.some(
+          (entry) =>
+            entry.tracking === "selected" || entry.tracking === "extra",
+        ),
+      ),
+    [owners],
+  );
+  const defaultProjectUnset =
+    settings.values !== undefined &&
+    String(settings.values.defaultProject ?? "").length === 0;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Input
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Filter repositories…"
+          className="h-8"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 shrink-0"
+          disabled={refreshing}
+          onClick={() => {
+            setRefreshing(true);
+            void load(true).finally(() => setRefreshing(false));
+          }}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+
+      {invalidExtraRepos.length > 0 ? (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          The extraRepos setting contains{" "}
+          {invalidExtraRepos.map((entry) => `"${entry}"`).join(", ")}, which{" "}
+          {invalidExtraRepos.length === 1 ? "is" : "are"} not an owner/repo name
+          and {invalidExtraRepos.length === 1 ? "tracks" : "track"} nothing.
+          Wildcards are not supported. Check the repositories you want here
+          instead.
+        </p>
+      ) : null}
+
+      {defaultProjectUnset && selectedWithoutProject ? (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Set a default BB project below. Repos without their own BB project
+          need it before Send agent can spawn a thread.
+        </p>
+      ) : null}
+
+      {error !== null ? (
+        <EmptyState message={error} />
+      ) : owners === null ? (
+        <DelayedLoading>
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+          </div>
+        </DelayedLoading>
+      ) : owners.length === 0 ? (
+        <EmptyState message="No repositories visible to the signed-in GitHub CLI account." />
+      ) : (
+        <div className="flex flex-col">
+          {owners.map((owner) => (
+            <OwnerGroup
+              key={owner.owner}
+              owner={owner}
+              filter={filter}
+              busyRepo={busyRepo}
+              onToggle={toggle}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default definePluginApp((app) => {
+  app.slots.settingsSection({
+    id: "repositories",
+    title: "Repositories",
+    description:
+      "Pick the repos whose issues and pull requests show up in the GitHub panel.",
+    component: RepoPickerSettings,
+  });
   app.slots.navPanel({
     id: "github",
     title: "GitHub",

@@ -783,6 +783,42 @@ database, host-managed settings/storage/schedules, secrets, and registration.
 A failed activation restores that snapshot and records the latest failure on
 the plugin so it can be surfaced as needing attention.
 
+### GitHub plugin
+
+The builtin GitHub plugin tracks the union of three sources: every BB project
+source whose checkout has a GitHub `origin` remote, the repos checked under
+Settings → GitHub → Repositories, and the `extraRepos` setting.
+
+The Repositories picker lists your GitHub account and every organization you
+belong to, each with its non-archived repos, and stores the checked ones in
+plugin storage. Repos that come from a project checkout or from `extraRepos`
+render checked and disabled, because a plugin can read its declarative settings
+but cannot write them.
+
+`extraRepos` is an explicit comma-separated `owner/repo` list and does not
+accept wildcards. An entry like `owner/*` tracks nothing, is logged as a
+warning, and is called out in the picker. Use the picker to track a whole
+owner's repos.
+
+| Key              | Default | Behavior                                                              |
+| ---------------- | ------- | --------------------------------------------------------------------- |
+| `extraRepos`     | `""`    | Comma-separated `owner/repo` names to track beyond project checkouts. |
+| `defaultProject` | unset   | Where agent threads spawn for repos with no BB project of their own.  |
+
+Repos tracked through the picker or `extraRepos` have no BB project, so set
+`defaultProject` before using Send agent on them.
+
+The same selection is available to agents and scripts from the CLI:
+
+```bash
+bb github repos --available     # every repo you can track, with its state
+bb github track owner/repo
+bb github untrack owner/repo
+```
+
+`untrack` clears the picker selection only. A repo that a project checkout
+points at, or that `extraRepos` names, stays tracked.
+
 ### Provider retry plugin
 
 The builtin Provider retry plugin is enabled on fresh installations. It
