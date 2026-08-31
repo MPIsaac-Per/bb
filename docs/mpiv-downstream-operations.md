@@ -68,7 +68,7 @@ scp scripts/mpiv-hub/bb-mpiv-deploy-worker.service scripts/mpiv-hub/bb-mpiv-depl
 ssh hub 'systemctl --user daemon-reload && systemctl --user enable --now bb-mpiv-deploy-worker.timer'
 ```
 
-The service uses `BB_CLI=/home/michael/.npm-global/bin/bb` and `BB_SERVER_URL=http://127.0.0.1:38886`, ensuring rollout commands use the CLI installed by the exact local Hub deployment against the loopback server. Override either value with a systemd user-unit drop-in only when the Hub installation changes.
+The worker defaults to `BB_CLI=/home/michael/.npm-global/bin/bb` and `BB_SERVER_URL=http://127.0.0.1:38886`, ensuring rollout commands use the CLI installed by the exact local Hub deployment against the loopback server. Override either value with a systemd user-unit drop-in only when the Hub installation changes. The service does not export `BB_CLI`, so deployment health checks cannot recursively re-execute the installed CLI.
 
 The workflow's `mpiv-production` environment requires Michael's approval under IRR-5. Approval publishes `mpiv-deploy-approved-<run>-<attempt>`, which binds the run, source commit, version, and checksum. Without that exact marker, the worker does not deploy a new build, but it still processes an existing machine rollout.
 

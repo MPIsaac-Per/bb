@@ -220,6 +220,9 @@ describe("MPIV Hub deployment", () => {
     expect(runCommand.mock.calls[2][0].input).toContain(
       'systemctl --user restart "$service"',
     );
+    expect(runCommand.mock.calls[2][0].input).toContain(
+      'env -u BB_CLI -u BB_CLI_REEXEC "$package_prefix/bin/bb" status --json',
+    );
     expect(
       spawnSync("bash", ["-n"], {
         encoding: "utf8",

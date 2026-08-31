@@ -327,6 +327,7 @@ describe("protocol self-update", () => {
   it("does not download an exact current release", async () => {
     const test = await createFixture({
       currentVersion: "9.1.0-test",
+      enabled: false,
       protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
       serverVersion: "9.1.0-test",
     });
