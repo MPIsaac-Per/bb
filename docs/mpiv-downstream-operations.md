@@ -66,6 +66,55 @@ The daily `Sync MPIV With Upstream` workflow fast-forwards the fork's `main`, pr
 
 The repository must allow GitHub Actions to create pull requests before this workflow can complete. That GitHub setting also permits workflow-authored review approvals, so enabling it is an IRR-4 permissions decision.
 
+## Plugin Ownership And Deployment Checks
+
+Do not infer a plugin's implementation from its installation source alone. MPIV's GitHub customizations live in this fork under `plugins/github` and are packaged into `bb-app` as `builtin:github`. Production should therefore report `builtin:github`; that source is not evidence that the upstream implementation replaced the MPIV code. The private `mpiv-ai/bb-plugin-github` repository is a development reference, not the production installation source.
+
+Separately installed plugins are different:
+
+- `mpiv-ai/bb-plugins` is the MPIV marketplace manifest. Inspect its current `marketplace.json`; at the time this section was written it listed only `attention`.
+- Adding or refreshing a marketplace changes discovery metadata only. It does not install a listed plugin.
+- Managed, direct, and third-party plugin registrations, settings, and key-value state live in the production data directory and database, not in the `bb-app` package. The deployment must continue using `/home/michael/.bb`, and its pre-deploy database backup is the recovery source.
+
+Before merging a release, refresh both upstream and downstream and verify that `mpiv/prod` contains current upstream:
+
+```bash
+git fetch origin main
+git fetch fork mpiv/prod
+git merge-base --is-ancestor origin/main fork/mpiv/prod
+git log --oneline origin/main..fork/mpiv/prod -- plugins/github
+```
+
+The GitHub path log must contain every MPIV customization intended for production. When that path changes, run its focused gates before opening the downstream pull request:
+
+```bash
+pnpm exec turbo run typecheck test --filter=bb-plugin-github --concurrency=2 --output-logs=new-only
+pnpm exec turbo run build --filter=bb-plugin-github --output-logs=new-only
+pnpm exec oxfmt plugins/github docs/configuration.md --check
+```
+
+Before approving deployment, capture the current production inventory and compare it after deployment:
+
+```bash
+bb plugin list --json
+bb marketplace list --json
+bb plugin source github --json
+```
+
+After deployment, verify the exact release, plugin runtime, customization markers, sync health, and machine rollout:
+
+```bash
+bb settings version --json
+bb plugin list --json
+bb plugin source github --json
+bb github --help
+bb plugin logs github -n 20
+ssh hub 'systemctl --user is-active bb-server.service'
+ssh hub 'jq "{deploymentStatus,rolloutStatus,rolloutVersion,pendingMachineIds,updatedAt}" /home/michael/.bb-mpiv/worker/state.json'
+```
+
+For the MPIV GitHub build, `bb github --help` must include `repos --available`, `track`, and `untrack`. Confirm the repository picker under Settings → GitHub and the Repo, Assignee, and Status table filters in the web UI. Treat any missing plugin, unexpected disabled state, degraded status, lost setting, or changed source as a failed deployment verification. Inspect the release's `bb.db.before` and `bb-app.before.tgz` before attempting recovery; do not reinstall or restore state based only on a missing UI surface.
+
 ## Local Dogfood
 
 Use the isolated source data directory rather than production state:
